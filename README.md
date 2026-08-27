@@ -2,7 +2,7 @@
 
 A **Retrieval-Augmented Generation (RAG)** system that builds a searchable knowledge base of football (soccer) content — covering the **Laws of the Game**, **football analytics metrics**, **tactical concepts**, and **match analysis** — and retrieves the most relevant passages for any natural-language question using vector similarity search.
 
-This repository is the **Week 1 deliverable** for the Knowledge Infrastructure milestone. It provides the retrieval foundation that Week 2 agents, Week 3 discussions, and Week 4 analytics will build upon.
+This repository is the **Week 1 deliverable** for the Knowledge Infrastructure milestone.
 
 ---
 
@@ -18,7 +18,7 @@ This repository is the **Week 1 deliverable** for the Knowledge Infrastructure m
 - [Searching the Knowledge Base](#searching-the-knowledge-base)
 - [Design Decisions](#design-decisions)
 - [Evaluation](#evaluation)
-- [Week 2 Handoff — Retrieval Interface](#week-2-handoff--retrieval-interface)
+
 - [Known Limitations](#known-limitations)
 - [Tech Stack](#tech-stack)
 
@@ -352,65 +352,6 @@ Results are written to `docs/evaluation_results.json`.
 See [`docs/evaluation.md`](docs/evaluation.md) for the full evaluation methodology document.
 
 ---
-
-## Week 2 Handoff — Retrieval Interface
-
-Week 2 agents will use this system to retrieve factual context for their reasoning. The retrieval interface is exposed as a **Python function** in `src/rag/search.py`.
-
-### Interface
-
-```python
-from search import search
-
-results = search(question, k=5)
-```
-
-### Input
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `question` | `str` | — | Natural-language query |
-| `k` | `int` | `5` | Number of chunks to retrieve |
-| `client` | `OpenAI` | `None` | Optional pre-initialized OpenAI client (created automatically if not provided) |
-| `model` | `str` | `None` | Optional embedding model name (read from `.env` if not provided) |
-| `conn` | `psycopg2.connection` | `None` | Optional pre-opened DB connection (created automatically if not provided) |
-
-### Output
-
-Returns a `list[dict]` ordered by similarity (best match first). Each dict contains:
-
-```python
-{
-    "doc_id": "doc_011",          # Source document identifier
-    "chunk_index": 3,             # Position of the chunk within the document
-    "title": "Offside | IFAB",    # Page title of the source
-    "url": "https://...",         # Original source URL
-    "text": "A player is in...",  # Full chunk text
-    "similarity": 0.847           # Cosine similarity score (0–1)
-}
-```
-
-### Example
-
-```python
-from search import search
-
-results = search("What is expected goals (xG)?", k=3)
-
-for r in results:
-    print(f"[{r['doc_id']}] similarity={r['similarity']:.3f}")
-    print(f"  {r['text'][:100]}...")
-```
-
-### CLI Access
-
-```bash
-# Single query
-python src/rag/search.py "What is the offside rule?"
-
-# Interactive mode
-python src/rag/search.py
-```
 
 ---
 
