@@ -68,6 +68,109 @@ class Agent:
             tool_calls=tool_calls,
         )
 
+    def run_discussion_turn(
+        self,
+        task: str,
+        received_messages: list[dict[str, str]] | None = None,
+    ) -> AgentResponse:
+        """Respond to a discussion turn and retrieve evidence when needed.
+
+        ``received_messages`` contains messages routed to this agent by the
+        discussion engine. Retrieval is exposed through the configured tools,
+        so the LLM can request Week 1 knowledge after reading those messages.
+        Retrieved tool results are returned in ``AgentResponse.sources``.
+        """
+        if not isinstance(task, str) or not task.strip():
+            raise ValueError("task must be a non-empty string")
+        if received_messages is not None and not isinstance(received_messages, list):
+            raise TypeError("received_messages must be a list of message dictionaries")
+        if any(
+            not isinstance(message, dict)
+            or not isinstance(message.get("content"), str)
+            for message in received_messages or []
+        ):
+            raise ValueError("each received message must contain string 'content'")
+
+        memory = self.memory.get_relevant(task)
+        discussion_context = self._format_discussion_messages(received_messages or [])
+        messages = self._build_messages(
+            task=(
+                f"Discussion task:\n{task}\n\n"
+                f"Messages received from other agents:\n{discussion_context}"
+            ),
+            memory=memory,
+            sources=[],
+        )
+        messages[0]["content"] += (
+            "\n\nThis is a live discussion turn. If a received claim needs "
+            "verification or additional football knowledge, use the "
+            "knowledge_search tool before answering."
+        )
+
+        content, tool_calls = self._complete_with_tools(messages)
+        sources = self._sources_from_tool_calls(tool_calls)
+        self.memory.add({"task": task, "response": content})
+
+        return AgentResponse(
+            content=content,
+            sources=sources,
+            tool_calls=tool_calls,
+            metadata={"received_messages": received_messages or []},
+        )
+
+    def _complete_with_tools(
+        self,
+        messages: list[dict[str, str]],
+    ) -> tuple[str, list[ToolCall]]:
+        tools = self.tools.get_tools()
+        tool_calls: list[ToolCall] = []
+        for _ in range(self.max_tool_rounds + 1):
+            result = self.llm.generate(messages=messages, tools=tools)
+            content, requested_calls = self._parse_result(result)
+            if not requested_calls:
+                return content, tool_calls
+
+            messages.append({"role": "assistant", "content": content})
+            for requested_call in requested_calls:
+                requested_call.result = self.tools.execute(
+                    requested_call.name,
+                    requested_call.arguments,
+                )
+                tool_calls.append(requested_call)
+                messages.append({
+                    "role": "tool",
+                    "name": requested_call.name,
+                    "content": str(requested_call.result),
+                })
+        raise RuntimeError("LLM exceeded the maximum number of tool rounds")
+
+    @staticmethod
+    def _format_discussion_messages(messages: list[dict[str, str]]) -> str:
+        if not messages:
+            return "No messages have been received yet."
+        return "\n\n".join(
+            f"From {message.get('sender', 'unknown agent')}: {message['content']}"
+            for message in messages
+        )
+
+    @staticmethod
+    def _sources_from_tool_calls(tool_calls: list[ToolCall]) -> list[RetrievedSource]:
+        sources: list[RetrievedSource] = []
+        for call in tool_calls:
+            if call.name != "knowledge_search" or not isinstance(call.result, list):
+                continue
+            for item in call.result:
+                if not isinstance(item, dict) or "content" not in item:
+                    continue
+                sources.append(
+                    RetrievedSource(
+                        content=str(item["content"]),
+                        source=str(item.get("source", "Unknown")),
+                        score=item.get("score"),
+                    )
+                )
+        return sources
+
     def _build_messages(
         self,
         task: str,

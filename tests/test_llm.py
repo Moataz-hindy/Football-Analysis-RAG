@@ -9,7 +9,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.agent.agent import Agent
+from src.agent.config import AgentConfig
 from src.agent.llm import DEFAULT_PARAMETERS, OpenAICompatibleLLM, to_tool_schema
+from src.agent.persona import Persona
+from src.agent.tool_registery import ToolRegistry
+from src.tools.knowledge_search import KnowledgeSearchTool
+from src.agent.types import RetrievedSource
 
 LLM_ENV_VARS = ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL")
 
@@ -153,6 +158,57 @@ def test_a_new_task_forgets_the_previous_runs_tool_calls(llm):
     llm.generate([{"role": "user", "content": "an unrelated question"}])
 
     assert llm._emitted == []
+
+
+def test_discussion_turn_retrieves_after_receiving_a_message():
+    retrieval = MagicMock()
+    retrieval.retrieve.return_value = [
+        RetrievedSource(
+            content="Expected goals estimate shot quality.",
+            source="week1:xg",
+            score=0.91,
+        )
+    ]
+    knowledge_search = KnowledgeSearchTool(retrieval=retrieval)
+    discussion_llm = MagicMock()
+    discussion_llm.generate.side_effect = [
+        {
+            "content": "",
+            "tool_calls": [
+                {
+                    "name": "knowledge_search",
+                    "arguments": {"query": "expected goals shot quality"},
+                }
+            ],
+        },
+        {"content": "The claim is supported by the retrieved evidence."},
+    ]
+    memory = MagicMock()
+    memory.get_relevant.return_value = []
+    config = AgentConfig(
+        persona=Persona(
+            _name="Analyst",
+            _background="Football analyst",
+            _stance="Evidence matters",
+            _communication_style="Clear",
+            _expertise=["Analytics"],
+            _priorities=["Accuracy"],
+        ),
+        memory=memory,
+        tools=ToolRegistry([knowledge_search]),
+        retrieval=retrieval,
+        llm=discussion_llm,
+    )
+
+    response = Agent(config).run_discussion_turn(
+        "Evaluate the claim.",
+        [{"sender": "Tactical Analyst", "content": "xG measures shot quality."}],
+    )
+
+    retrieval.retrieve.assert_called_once_with("expected goals shot quality")
+    assert response.content == "The claim is supported by the retrieved evidence."
+    assert response.sources[0].source == "week1:xg"
+    assert response.metadata["received_messages"][0]["sender"] == "Tactical Analyst"
 
 
 @pytest.mark.parametrize(
