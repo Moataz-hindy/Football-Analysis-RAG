@@ -5,14 +5,16 @@ from src.agent.agent import Agent
 from src.agent.config import AgentConfig
 from src.agent.llm import OpenAICompatibleLLM
 from src.agent.memory import ConversationMemory
-from src.agent.tool_registery import ToolRegistery
+from src.agent.persona_loader import load_persona
+from src.agent.retrieval import RAGRetrieval
+from src.agent.tool_registery import ToolRegistry
 from src.tools.calculator import CalculatorTool
 from src.tools.knowledge_search import KnowledgeSearchTool
 from src.tools.web_search import WebSearchTool
 
 def main() -> None:
 
-    project_root = Path(__file__).resolve().parent[2]
+    project_root = Path(__file__).resolve().parents[2]
 
     load_dotenv(project_root / ".env")
 
@@ -21,9 +23,9 @@ def main() -> None:
         project_root / "personas" / "tactical_analyst.yaml"
 )
 
-    meomory = ConversationMemory()
+    memory = ConversationMemory()
 
-    retreivel = RagRetrieval(k=3)
+    retrieval = RAGRetrieval(k=3)
 
     tools = ToolRegistry(
     tools=[

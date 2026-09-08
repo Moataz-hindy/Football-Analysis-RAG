@@ -93,7 +93,9 @@ class OpenAICompatibleLLM(LLMInterface):
         if tools:
             kwargs["tools"] = [to_tool_schema(tool) for tool in tools]
             kwargs["tool_choice"] = "auto"
-
+        if self._model == "qwen/qwen3.6-27b":
+             kwargs["reasoning_effort"] = "none"
+   
         response = self._client.chat.completions.create(**kwargs)
         self.last_response = response
 

@@ -59,10 +59,18 @@ class DiscussionOrchestrator:
         agent_id: str,
         task: str,
         state: DiscussionState,
+        received_messages: list[dict[str, str]] | None = None,
     ) -> AgentResponse:
         """Run one agent and attach discussion context if it fails."""
         try:
-            return self.agents[agent_id].run(task)
+            agent = self.agents[agent_id]
+            # None means initialization; even an empty list means a debate turn.
+            if received_messages is None:
+                return agent.run(task)
+            return agent.run_discussion_turn(
+                task=task,
+                received_messages=received_messages,
+            )
         except Exception as error:
             raise DiscussionRunError(
                 agent_id=agent_id,
@@ -133,21 +141,16 @@ class DiscussionOrchestrator:
             state.advance_round()
 
             for agent_id in state.agent_ids:
-                received_messages = state.inboxes[agent_id]
-
-                received_text = "\n\n".join(
-                    f"From: {message.sender_id}\n"
-                    f"Message: {message.content}"
-                    for message in received_messages
-                )
-
-                if not received_text:
-                    received_text = "No messages received for this round"
+                # Translate our message objects into the agent's input format.
+                # The agent formats these messages for the LLM itself.
+                received_messages = [
+                    {"sender": message.sender_id, "content": message.content}
+                    for message in state.inboxes[agent_id]
+                ]
 
                 task = (
                     f"Discussion topic: {state.topic}\n"
                     f"Round: {state.current_round} of {state.total_rounds}\n\n"
-                    f"Messages received:\n{received_text}\n\n"
                     "Respond to the arguments you received from your persona's perspective. "
                     "Treat other agents' claims as discussion input, not verified evidence.\n"
                     "Explain whether you maintain or revise your position and why. "
@@ -162,7 +165,8 @@ class DiscussionOrchestrator:
                     agent_id=agent_id,
                     task=task,
                     state=state,
-                        )
+                    received_messages=received_messages,
+                )
                 recipients = self.router.get_recipients(agent_id)
 
                 message = DiscussionMessage(

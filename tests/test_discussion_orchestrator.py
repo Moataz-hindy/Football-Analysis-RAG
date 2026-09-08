@@ -15,8 +15,25 @@ class FakeAgent:
 
         # A separate list for this agent's received tasks.
         self.tasks: list[str] = []
+        self.initial_calls = 0
+        self.discussion_inputs: list[list[dict[str, str]]] = []
 
     def run(self, task: str) -> AgentResponse:
+        self.initial_calls += 1
+        return self._respond(task)
+
+    def run_discussion_turn(
+        self,
+        task: str,
+        received_messages: list[dict[str, str]] | None = None,
+    ) -> AgentResponse:
+        # Copy the input so we can inspect exactly what was delivered.
+        self.discussion_inputs.append([
+            dict(message) for message in received_messages or []
+        ])
+        return self._respond(task)
+
+    def _respond(self, task: str) -> AgentResponse:
         # Remember exactly what the orchestrator sent this agent.
         self.tasks.append(task)
 
@@ -61,6 +78,8 @@ def test_three_round_discussion() -> None:
     # Every agent receives one initialization task and three round tasks.
     for agent in agents.values():
         assert len(agent.tasks) == 4
+        assert agent.initial_calls == 1
+        assert len(agent.discussion_inputs) == 3
 
     # range(4) produces 0, 1, 2, 3.
     # Round 0 represents initial opinions.
@@ -91,42 +110,41 @@ def test_three_round_discussion() -> None:
     # .items() gives us each dictionary key and its corresponding object.
     for agent_id, agent in agents.items():
         for round_number in range(1, 4):
-            # tasks[0] is initialization; tasks[1] is Round 1, etc.
-            task = agent.tasks[round_number]
+            # Discussion inputs start at index 0 for Round 1.
+            expected_messages = [
+                {"sender": message.sender_id, "content": message.content}
+                for message in state.messages
+                if message.round_number == round_number - 1
+                and agent_id in message.recipient_ids
+            ]
+            assert agent.discussion_inputs[round_number - 1] == expected_messages
 
+            # Received messages are supplied separately, not duplicated in task.
             for message in state.messages:
-                # The task should include this message only if it
-                # belongs to the previous round AND targets this agent.
-                should_receive = (
-                    message.round_number == round_number - 1
-                    and agent_id in message.recipient_ids
-                )
-
-                # For strings, "in" checks whether text is present.
-                is_present = message.content in task
-
-                assert is_present == should_receive, (
-                    f"Incorrect message visibility for {agent_id} "
-                    f"in round {round_number}: {message.content}"
-                )
+                assert message.content not in agent.tasks[round_number]
 
     print("Passed: six agents completed three discussion rounds.")
     print("Passed: recipients follow the graph.")
     print("Passed: agents received only their previous-round messages.")
+    print("Passed: initialization uses run; debate uses run_discussion_turn.")
 
 
 
 class FailingAgent(FakeAgent):
     """Behaves normally until its Round 2 call."""
 
-    def run(self, task: str) -> AgentResponse:
+    def run_discussion_turn(
+        self,
+        task: str,
+        received_messages: list[dict[str, str]] | None = None,
+    ) -> AgentResponse:
         # Before the third call, two tasks have been received:
         # initial opinion and Round 1.
         if len(self.tasks) == 2:
             raise RuntimeError("Simulated model connection failure.")
 
         # Otherwise, use the normal fake-agent behavior.
-        return super().run(task)
+        return super().run_discussion_turn(task, received_messages)
 
 
 
@@ -214,6 +232,8 @@ def test_configured_round_count() -> None:
 
     for agent in agents.values():
         assert len(agent.tasks) == 5
+        assert agent.initial_calls == 1
+        assert len(agent.discussion_inputs) == 4
 
     # Ensure the recorded phases are exactly initialization and rounds 1–4.
     assert {
