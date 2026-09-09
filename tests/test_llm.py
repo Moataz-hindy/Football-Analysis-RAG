@@ -205,7 +205,7 @@ def test_discussion_turn_retrieves_after_receiving_a_message():
         [{"sender": "Tactical Analyst", "content": "xG measures shot quality."}],
     )
 
-    retrieval.retrieve.assert_called_once_with("expected goals shot quality")
+    retrieval.retrieve.assert_called_once_with(query="expected goals shot quality")
     assert response.content == "The claim is supported by the retrieved evidence."
     assert response.sources[0].source == "week1:xg"
     assert response.metadata["received_messages"][0]["sender"] == "Tactical Analyst"
