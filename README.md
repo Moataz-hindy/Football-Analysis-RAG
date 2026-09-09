@@ -71,6 +71,31 @@ This project implements an end-to-end RAG pipeline:
                                                            └─────────────────────┘
 ```
 
+## Mid-discussion retrieval
+
+Week 2 agents can retrieve Week 1 knowledge after receiving a message from
+another agent. Register `KnowledgeSearchTool` in the agent's tool registry and
+call `run_discussion_turn` from the discussion orchestrator:
+
+```python
+response = agent.run_discussion_turn(
+    task="Evaluate the claim in the current discussion.",
+    received_messages=[
+        {
+            "sender": "Tactical Analyst",
+            "content": "The team created high-quality chances through central progression.",
+        }
+    ],
+)
+```
+
+The agent sees the routed messages, can invoke `knowledge_search` when it needs
+verification or additional context, and receives the tool result before
+producing its response. Retrieved evidence is available in
+`response.sources`, while the full calls and results are available in
+`response.tool_calls`. The Week 1 retrieval implementation remains the source
+of truth; no separate discussion knowledge store is created.
+
 ---
 
 ## Project Structure
