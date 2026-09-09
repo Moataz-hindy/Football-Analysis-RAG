@@ -6,3 +6,4 @@ pgvector
 openai
 pyyaml
 networkx
+pytest

@@ -175,3 +175,62 @@ All persistence operations log through Python's standard `logging` library using
 - **INFO**: Successful save operations (with file size, agent count, message count), successful loads (with topic and round count), and discovery counts during listing.
 - **WARNING**: Corrupted JSON files skipped during `list_discussions()`, missing non-critical metadata fields during reconstruction.
 - **ERROR**: File write failures, permission issues, JSON syntax errors, and schema validation failures with full exception traceback.
+
+## 2. Run Identity & Reproducibility (Section 4.8, 23)
+
+### 2.1 Run identity
+
+Every discussion run carries a `discussion_id`. By default the
+orchestrator generates a UUID4, so two runs of the same topic never
+collide. A caller can pin a deterministic name:
+
+```python
+state = orchestrator.run(topic="...", total_rounds=3, discussion_id="2026-09-09_japan-low-block")
+```
+
+Because `save_discussion` names the record `{discussion_id}.json`, the
+identifier alone retrieves the complete history:
+
+```python
+from src.discussion import load_discussion_by_id
+result = load_discussion_by_id("2026-09-09_japan-low-block")
+```
+
+### 2.2 Captured run configuration
+
+The persisted `config` block records everything needed to trace a run
+(Requirement 4.8 / 23):
+
+| Field | Source of truth |
+|---|---|
+| `discussion_id` | Orchestrator (or caller-supplied) |
+| `topic`, `num_rounds`, `agent_ids` | `DiscussionState` |
+| `graph` | Adjacency list serialized from the `GraphRouter` |
+| `llm_model`, `llm_temperature` | The LLM adapter itself (`OpenAICompatibleLLM.model` / `.temperature`), captured automatically by `save_discussion_from_state(..., llm=llm)`. Hand-passed values keep priority and act as an override. |
+| `metadata.llm_base_url`, `metadata.llm_max_tokens` | LLM adapter |
+| `metadata.llm_seed` | `LLM_SEED` environment variable, recorded when set |
+| `metadata.persona_files`, `metadata.retrieval`, `metadata.status` | Supplied by the runner (`src/discussion/run_discussion.py`) |
+
+### 2.3 Nondeterminism
+
+Exact reproduction of LLM output is not guaranteed: providers sample
+stochastically, free tiers throttle, and tool traces may vary. The system
+makes the run **traceable** instead:
+
+* Set `LLM_TEMPERATURE=0` in `.env` for the most stable behavior.
+* Optionally set `LLM_SEED`; it is recorded in the config metadata.
+* Every message carries `timestamp` and `message_id`; recipients come
+  from the persisted graph, so routing and ordering are reconstructable.
+
+### 2.4 Reproducible demonstration
+
+```bash
+python -m src.discussion.run_discussion                       # default topic, 3 rounds
+python -m src.discussion.run_discussion --discussion-id demo_run_1
+```
+
+The script builds the six persona agents, runs the discussion with Week 1
+retrieval enabled, saves `outputs/{discussion_id}.json`, then reloads the
+record by ID and prints a verification summary (participants, rounds,
+messages, retrieval events, opinion changes). See README "Reproducible
+discussion runs" for the full reviewer workflow.

@@ -98,6 +98,56 @@ of truth; no separate discussion knowledge store is created.
 
 ---
 
+## Reproducible discussion runs (Week 3, Requirement 4.8)
+
+Every discussion run is identifiable and traceable: the orchestrator
+assigns a `discussion_id` (UUID4 by default, caller-supplied on demand),
+and the persisted record under `outputs/{discussion_id}.json` captures
+the topic, participants, graph adjacency, round count, and the actual
+LLM model/temperature taken from the adapter that served the run — plus
+retrieved evidence and per-agent opinion history.
+
+### Run the demonstration
+
+```bash
+# 1. Week 1 services up (Postgres + pgvector) with an ingested knowledge base
+docker-compose up -d
+
+# 2. Run one complete, persisted discussion (6 agents, 3 rounds, Week 1 retrieval)
+python -m src.discussion.run_discussion
+
+# ...or pin the run's identity
+python -m src.discussion.run_discussion --discussion-id demo_run_1
+```
+
+The script prints the `discussion_id`, saves `outputs/{discussion_id}.json`,
+reloads the record by ID, and verifies participants, rounds, routing,
+retrieval events, and opinion changes.
+
+### Re-inspect a run later
+
+```bash
+python -c "from src.discussion import load_discussion_by_id; r = load_discussion_by_id('<discussion_id>'); print(r.config.topic, len(r.messages), 'messages')"
+python -c "from src.discussion import list_discussions; print(list_discussions())"
+```
+
+### Reproducibility notes
+
+* Model configuration is recorded from the source of truth
+  (`OpenAICompatibleLLM`), not hand-copied: see
+  `docs/discussion_architecture.md` §2.
+* LLM output itself is not exactly reproducible (provider-side sampling,
+  free-tier throttling). Set `LLM_TEMPERATURE=0` and optionally `LLM_SEED`
+  in `.env` for the most stable runs; both are recorded in the run record.
+* Round-trip behavior (persist → reload by ID → reconstruct messages,
+  graph, opinions) is covered by `tests/test_reproducible_run.py`:
+
+```bash
+python -m pytest tests/
+```
+
+---
+
 ## Project Structure
 
 ```

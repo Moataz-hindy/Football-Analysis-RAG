@@ -34,8 +34,13 @@ def make_response(content=None, tool_calls=None):
 
 
 @pytest.fixture
-def llm():
+def llm(monkeypatch):
     """Adapter whose client is mocked, so no request leaves the process."""
+    # src.rag.search runs load_dotenv() at import time, so a developer .env
+    # leaks sampling overrides into os.environ and into these assertions.
+    for name in ("LLM_TEMPERATURE", "LLM_MAX_TOKENS", "LLM_SEED",
+                 "LLM_TIMEOUT_SECONDS", "LLM_MAX_RETRIES"):
+        monkeypatch.delenv(name, raising=False)
     adapter = OpenAICompatibleLLM(
         api_key="test-key", base_url="http://localhost:1/v1", model="test-model"
     )

@@ -241,6 +241,38 @@ def list_discussions(output_dir: str | Path = "outputs") -> list[dict[str, Any]]
     logger.info("Found %d discussion(s) in %s", len(summaries), output_dir)
     return summaries
 
+def load_discussion_by_id(
+    discussion_id: str,
+    output_dir: str | Path = "outputs",
+) -> DiscussionResult:
+    """Reconstruct a completed discussion from its identifier (Requirement 4.8).
+
+    Because ``save_discussion`` names each file ``{discussion_id}.json``,
+    the identifier alone is enough for a downstream system (Week 4) to
+    retrieve the complete discussion history.
+
+    Parameters:
+    -----------
+    discussion_id: str
+        The identifier the discussion was persisted under.
+    output_dir: str or Path
+        Directory scanned by ``save_discussion``; defaults to 'outputs'.
+
+    Returns:
+    --------
+    DiscussionResult: Fully reconstructed discussion result object.
+
+    Raises:
+    -------
+    FileNotFoundError: If no file exists for ``discussion_id``.
+    """
+    discussion_id = str(discussion_id).strip()
+    if not discussion_id:
+        raise ValueError("discussion_id must be a non-empty string")
+
+    file_path = Path(output_dir) / f"{discussion_id}.json"
+    return load_discussion(file_path)
+
 
 # ---------------------------------------------------------------------------
 # Bridge: DiscussionState (orchestrator) → persistence JSON
@@ -389,6 +421,8 @@ def save_discussion_from_state(
     output_dir: str | Path = "outputs",
     llm_model: str = "",
     llm_temperature: float = 0.0,
+    llm: Any = None,
+    config_metadata: dict[str, Any] | None = None,
     duration_seconds: float = 0.0,
     errors: list[str] | None = None,
 ) -> str:
@@ -404,9 +438,21 @@ def save_discussion_from_state(
     output_dir : str or Path
         Directory for the output JSON file.
     llm_model : str
-        Model identifier for reproducibility.
+        Model identifier for reproducibility. Overrides ``llm`` when both
+        are given.
     llm_temperature : float
-        Temperature used during the discussion.
+        Temperature used during the discussion. Overrides ``llm`` when
+        both are given.
+    llm : LLMInterface, optional
+        The LLM adapter used during the run. When given and the explicit
+        ``llm_model``/``llm_temperature`` arguments are left blank, the
+        model and temperature are captured from this adapter so the
+        persisted config always matches the run's source of truth
+        (Requirement 4.8). Its base_url and max_tokens are recorded in
+        ``config.metadata``.
+    config_metadata : dict, optional
+        Extra run-configuration entries merged into ``config.metadata``
+        (e.g. persona files, seeds, demo script version).
     duration_seconds : float
         Wall-clock duration of the discussion run.
     errors : list[str] or None
@@ -430,6 +476,24 @@ def save_discussion_from_state(
         except Exception as e:
             logger.warning("Could not serialize graph: %s", e)
 
+    # Requirement 4.8: the persisted model configuration must match the
+    # adapter that actually served the discussion. Explicit arguments keep
+    # priority; otherwise capture from the LLM adapter.
+    if not llm_model and llm is not None and hasattr(llm, "model"):
+        llm_model = str(llm.model)
+    if not llm_temperature and llm is not None and hasattr(llm, "temperature"):
+        llm_temperature = float(llm.temperature)
+
+    run_metadata = dict(config_metadata or {})
+    if llm is not None:
+        if hasattr(llm, "base_url"):
+            run_metadata.setdefault("llm_base_url", str(llm.base_url))
+        if hasattr(llm, "max_tokens"):
+            run_metadata.setdefault("llm_max_tokens", int(llm.max_tokens))
+    seed = os.environ.get("LLM_SEED", "").strip()
+    if seed:
+        run_metadata.setdefault("llm_seed", seed)
+
     config = {
         "discussion_id": state.discussion_id,
         "topic": state.topic,
@@ -439,6 +503,7 @@ def save_discussion_from_state(
         "llm_model": llm_model,
         "llm_temperature": llm_temperature,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metadata": run_metadata,
     }
 
     # --- Convert messages ---

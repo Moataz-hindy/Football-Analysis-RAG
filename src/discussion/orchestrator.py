@@ -86,12 +86,19 @@ class DiscussionOrchestrator:
         self,
         topic: str,
         total_rounds: int = 3,
+        discussion_id: str | None = None,
     ) -> DiscussionState:
-        """Create a new discussion state and collect each agent's initial opinion."""
+        """Create a new discussion state and collect each agent's initial opinion.
+
+        ``discussion_id`` pins the run's identifier (Requirement 4.8) so a
+        run can be named deterministically, e.g. by a reviewer script.
+        When omitted, the state generates a fresh UUID.
+        """
         state = DiscussionState(
             topic=topic,
             agent_ids=list(self.agents),
             total_rounds=total_rounds,
+            **({"discussion_id": discussion_id} if discussion_id else {}),
         )
 
         for agent_id in state.agent_ids:
@@ -130,11 +137,17 @@ class DiscussionOrchestrator:
         self,
         topic: str,
         total_rounds: int = 3,
+        discussion_id: str | None = None,
     ) -> DiscussionState:
-        """Initialize the discussion and execute the configured rounds."""
+        """Initialize the discussion and execute the configured rounds.
+
+        ``discussion_id`` is forwarded to ``initialize_discussion``; see
+        that method (Requirement 4.8).
+        """
         state = self.initialize_discussion(
             topic=topic,
             total_rounds=total_rounds,
+            discussion_id=discussion_id,
         )
 
         for _ in range(state.total_rounds):
