@@ -112,6 +112,28 @@ outputs/
 - **Action**: Scans for `*.json` files, reads top-level metadata, handles and logs warnings for corrupt files without crashing.
 - **Returns**: List of discussion summaries sorted newest first by timestamp.
 
+#### `save_discussion_from_state(state, router=None, ...) -> str`
+- **Input**: A `DiscussionState` object (from the orchestrator's `run()` method) and optionally the `GraphRouter` used.
+- **Action**: Bridges the orchestrator's data model to the persistence JSON format:
+  - Maps `round_number` → `round_num`
+  - Maps `sources` → `sources_used`
+  - Converts `tool_calls` → `retrieval_events`
+  - Extracts `opinions[]` by parsing STANCE/REASONING/SOURCES USED markers from agent responses
+  - Serializes the graph adjacency list from the router
+- **Returns**: Path to the saved JSON file.
+- **Integration example**:
+  ```python
+  from src.discussion.persistence import save_discussion_from_state
+
+  state = orchestrator.run(topic="...", total_rounds=3)
+  path = save_discussion_from_state(
+      state=state,
+      router=router,
+      llm_model="qwen-3.6",
+      duration_seconds=elapsed,
+  )
+  ```
+
 ---
 
 ### 1.4 Logging Strategy

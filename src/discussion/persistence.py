@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -238,3 +240,208 @@ def list_discussions(output_dir: str | Path = "outputs") -> list[dict[str, Any]]
 
     logger.info("Found %d discussion(s) in %s", len(summaries), output_dir)
     return summaries
+
+
+# ---------------------------------------------------------------------------
+# Bridge: DiscussionState (orchestrator) → persistence JSON
+# ---------------------------------------------------------------------------
+
+def _extract_opinion(content: str) -> dict[str, str]:
+    """Best-effort extraction of STANCE / REASONING / SOURCES USED from agent text.
+
+    The orchestrator prompts agents to respond in this structured format.
+    If markers are missing, the full content is stored as raw_text so
+    Week 4 can still consume it.
+    """
+    stance = ""
+    reasoning = ""
+    sources_used = ""
+
+    # Try to extract STANCE
+    stance_match = re.search(
+        r"STANCE\s*:\s*(.+?)(?=\nREASONING\s*:|$)",
+        content,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if stance_match:
+        stance = stance_match.group(1).strip()
+
+    # Try to extract REASONING
+    reasoning_match = re.search(
+        r"REASONING\s*:\s*(.+?)(?=\nSOURCES?\s*USED\s*:|$)",
+        content,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if reasoning_match:
+        reasoning = reasoning_match.group(1).strip()
+
+    # Try to extract SOURCES USED
+    sources_match = re.search(
+        r"SOURCES?\s*USED\s*:\s*(.+)",
+        content,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if sources_match:
+        sources_used = sources_match.group(1).strip()
+
+    return {
+        "stance": stance,
+        "reasoning": reasoning,
+        "sources_used": sources_used,
+        "raw_text": content,
+    }
+
+
+def _graph_to_adjacency(graph_obj: Any) -> dict[str, list[str]]:
+    """Convert a DiscussionGraph / NetworkX DiGraph to an adjacency dict."""
+    # Accept GraphRouter, DiscussionGraph, or nx.DiGraph
+    g = graph_obj
+    if hasattr(g, "graph"):  # GraphRouter or DiscussionGraph wrapper
+        g = g.graph
+    if hasattr(g, "graph"):  # DiscussionGraph.graph → nx.DiGraph
+        g = g.graph
+
+    adjacency: dict[str, list[str]] = {}
+    for node in g.nodes:
+        adjacency[node] = list(g.successors(node))
+    return adjacency
+
+
+def save_discussion_from_state(
+    state: Any,
+    router: Any = None,
+    output_dir: str | Path = "outputs",
+    llm_model: str = "",
+    llm_temperature: float = 0.0,
+    duration_seconds: float = 0.0,
+    errors: list[str] | None = None,
+) -> str:
+    """Bridge function: convert orchestrator DiscussionState → persistence JSON.
+
+    Parameters
+    ----------
+    state : DiscussionState
+        The completed discussion state returned by DiscussionOrchestrator.run().
+    router : GraphRouter or DiscussionGraph, optional
+        The graph/router used during the discussion. If provided, the
+        adjacency list is serialized into the output config.
+    output_dir : str or Path
+        Directory for the output JSON file.
+    llm_model : str
+        Model identifier for reproducibility.
+    llm_temperature : float
+        Temperature used during the discussion.
+    duration_seconds : float
+        Wall-clock duration of the discussion run.
+    errors : list[str] or None
+        Any errors that occurred during the discussion.
+
+    Returns
+    -------
+    str
+        Path to the saved JSON file.
+    """
+    logger.info(
+        "Converting DiscussionState %s to persistence format...",
+        state.discussion_id,
+    )
+
+    # --- Build config ---
+    graph_dict: dict[str, list[str]] = {}
+    if router is not None:
+        try:
+            graph_dict = _graph_to_adjacency(router)
+        except Exception as e:
+            logger.warning("Could not serialize graph: %s", e)
+
+    config = {
+        "discussion_id": state.discussion_id,
+        "topic": state.topic,
+        "num_rounds": state.total_rounds,
+        "agent_ids": list(state.agent_ids),
+        "graph": graph_dict,
+        "llm_model": llm_model,
+        "llm_temperature": llm_temperature,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # --- Convert messages ---
+    messages = []
+    for msg in state.messages:
+        # Convert sources (RetrievedSource objects) to dicts
+        sources_used = []
+        for s in getattr(msg, "sources", []):
+            if hasattr(s, "content"):
+                sources_used.append({
+                    "content": s.content,
+                    "source": getattr(s, "source", ""),
+                    "score": getattr(s, "score", None),
+                    "metadata": getattr(s, "metadata", {}),
+                })
+            elif isinstance(s, dict):
+                sources_used.append(s)
+
+        # Convert tool_calls to retrieval_events
+        retrieval_events = []
+        for tc in getattr(msg, "tool_calls", []):
+            name = tc.name if hasattr(tc, "name") else tc.get("name", "")
+            args = tc.arguments if hasattr(tc, "arguments") else tc.get("arguments", {})
+            result = tc.result if hasattr(tc, "result") else tc.get("result")
+
+            retrieval_events.append({
+                "query": args.get("query", str(args)),
+                "num_results": len(result) if isinstance(result, list) else 0,
+                "timestamp": getattr(msg, "timestamp", ""),
+                "metadata": {"tool_name": name, "arguments": args},
+            })
+
+        messages.append({
+            "round_num": msg.round_number,
+            "sender_id": msg.sender_id,
+            "recipient_ids": list(msg.recipient_ids),
+            "content": msg.content,
+            "timestamp": getattr(msg, "timestamp", ""),
+            "sources_used": sources_used,
+            "retrieval_events": retrieval_events,
+            "metadata": {
+                "message_id": getattr(msg, "message_id", ""),
+            },
+        })
+
+    # --- Extract opinions from messages ---
+    opinions = []
+    for msg in state.messages:
+        parsed = _extract_opinion(msg.content)
+        opinions.append({
+            "agent_id": msg.sender_id,
+            "round_num": msg.round_number,
+            "stance": parsed["stance"],
+            "reasoning": parsed["reasoning"],
+            "sources_used": parsed["sources_used"],
+            "raw_text": parsed["raw_text"],
+            "timestamp": getattr(msg, "timestamp", ""),
+        })
+
+    # --- Build metadata ---
+    total_retrieval = sum(
+        len(m.get("retrieval_events", [])) if isinstance(m, dict)
+        else len(getattr(m, "retrieval_events", []))
+        for m in messages
+    )
+
+    metadata = {
+        "duration_seconds": duration_seconds,
+        "total_messages": len(messages),
+        "total_retrieval_events": total_retrieval,
+        "errors": errors or [],
+    }
+
+    # --- Assemble and save ---
+    data = {
+        "config": config,
+        "messages": messages,
+        "opinions": opinions,
+        "metadata": metadata,
+    }
+
+    return save_discussion(data, output_dir=output_dir)
