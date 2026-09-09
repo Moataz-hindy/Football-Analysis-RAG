@@ -173,6 +173,14 @@ class DiscussionMessage:
 class OpinionSnapshot:
     """
     Snapshot of an agent's opinion/stance at round 0 (initial) or after round N.
+
+    Requirement 4.7 (Opinion Evolution): in addition to the stance/reasoning
+    captured for a single round, each snapshot records whether the stance
+    changed relative to that same agent's previous snapshot, and (when it
+    did) a short, best-effort reason for the change. Comparing consecutive
+    snapshots for one `agent_id` across increasing `round_num` values yields
+    that agent's full opinion history, from initial opinion (round_num == 0)
+    to final opinion (the snapshot with the highest round_num).
     """
 
     agent_id: str
@@ -184,6 +192,8 @@ class OpinionSnapshot:
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    changed_from_previous: bool = False
+    change_reason: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -195,6 +205,8 @@ class OpinionSnapshot:
             "sources_used": self.sources_used,
             "raw_text": self.raw_text,
             "timestamp": self.timestamp,
+            "changed_from_previous": self.changed_from_previous,
+            "change_reason": self.change_reason,
             "metadata": self.metadata,
         }
 
@@ -208,6 +220,8 @@ class OpinionSnapshot:
             sources_used=data.get("sources_used", ""),
             raw_text=data.get("raw_text", ""),
             timestamp=data.get("timestamp", ""),
+            changed_from_previous=bool(data.get("changed_from_previous", False)),
+            change_reason=data.get("change_reason", ""),
             metadata=data.get("metadata", {}),
         )
 
