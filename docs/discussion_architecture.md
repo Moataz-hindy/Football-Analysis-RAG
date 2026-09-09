@@ -78,6 +78,20 @@ outputs/
       "sources_used": "",
       "raw_text": "Initial opinion text...",
       "timestamp": "2026-09-07T14:00:05Z",
+      "changed_from_previous": false,
+      "change_reason": "",
+      "metadata": {}
+    },
+    {
+      "agent_id": "Tactical Analyst",
+      "round_num": 1,
+      "stance": "Confident the low block was net-positive.",
+      "reasoning": "Transition moments punished Spain's high line, changing my assessment.",
+      "sources_used": "",
+      "raw_text": "Round 1 updated analysis...",
+      "timestamp": "2026-09-07T14:02:10Z",
+      "changed_from_previous": true,
+      "change_reason": "Transition moments punished Spain's high line, changing my assessment.",
       "metadata": {}
     }
   ],
@@ -92,6 +106,24 @@ outputs/
 ```
 
 ---
+
+### 1.2.1 Opinion Evolution (Section 4.7)
+
+`opinions[]` doubles as the agent's opinion-evolution history: for a given
+`agent_id`, sorting its snapshots by `round_num` gives the initial opinion
+(`round_num == 0`), the opinion recorded after every subsequent discussion
+round, and the final opinion (the highest `round_num`). Two extra fields
+on `OpinionSnapshot` track change over time:
+
+- `changed_from_previous` (bool): whether the parsed `stance` differs from
+  that same agent's immediately preceding snapshot (case/whitespace
+  insensitive comparison). Always `false` for `round_num == 0`.
+- `change_reason` (str): when a change is detected, a short excerpt taken
+  from the agent's own `REASONING` for that round; otherwise `""`.
+
+This is built by `build_opinion_history(state)` in `persistence.py`, which
+walks `state.messages` per agent in round order — so it works for any
+configured `total_rounds`, not just a fixed count.
 
 ### 1.3 Module APIs (`src.discussion.persistence`)
 
