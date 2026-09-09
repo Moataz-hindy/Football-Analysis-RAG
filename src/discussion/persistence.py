@@ -292,6 +292,82 @@ def _extract_opinion(content: str) -> dict[str, str]:
     }
 
 
+def _stance_changed(previous_stance: str, current_stance: str) -> bool:
+    """Whitespace/case-insensitive comparison used to detect an opinion change."""
+    return previous_stance.strip().lower() != current_stance.strip().lower()
+
+
+def _derive_change_reason(reasoning: str) -> str:
+    """Best-effort short reason for a stance change, taken from the agent's own reasoning.
+
+    We don't invent an explanation; we surface the first sentence of the
+    REASONING the agent already gave for that round, so the reason stays
+    grounded in what the agent actually said.
+    """
+    reasoning = reasoning.strip()
+    if not reasoning:
+        return ""
+
+    first_sentence = re.split(r"(?<=[.!?])\s+", reasoning)[0].strip()
+    return first_sentence
+
+
+def build_opinion_history(state: Any) -> list[dict[str, Any]]:
+    """Build the Requirement 4.7 opinion-evolution history from a DiscussionState.
+
+    For every agent, walks their messages in round order (round 0 = initial
+    opinion) and produces one snapshot per round containing:
+      - the parsed stance/reasoning for that round,
+      - `changed_from_previous`: whether the stance differs from that same
+        agent's immediately preceding snapshot (always False for round 0),
+      - `change_reason`: a short, best-effort reason drawn from the agent's
+        own REASONING text when a change is detected, else "".
+
+    The agent's final opinion is simply the snapshot with the highest
+    `round_num` for that `agent_id`; no separate storage is needed for it.
+
+    This works for any number of configured rounds, since it derives
+    everything from `state.messages` rather than assuming a fixed count.
+    """
+    previous_stance_by_agent: dict[str, str] = {}
+    opinions: list[dict[str, Any]] = []
+
+    # state.messages are appended round-by-round as the discussion runs, but
+    # sort defensively so this function is correct regardless of call order.
+    ordered_messages = sorted(state.messages, key=lambda msg: msg.round_number)
+
+    for msg in ordered_messages:
+        parsed = _extract_opinion(msg.content)
+        agent_id = msg.sender_id
+        # Fall back to the raw text when STANCE: isn't present, so agents
+        # that don't follow the format still get meaningful change detection.
+        comparable_stance = parsed["stance"] or parsed["raw_text"]
+
+        is_initial_snapshot = agent_id not in previous_stance_by_agent
+        changed = (
+            False
+            if is_initial_snapshot
+            else _stance_changed(previous_stance_by_agent[agent_id], comparable_stance)
+        )
+        change_reason = _derive_change_reason(parsed["reasoning"]) if changed else ""
+
+        opinions.append({
+            "agent_id": agent_id,
+            "round_num": msg.round_number,
+            "stance": parsed["stance"],
+            "reasoning": parsed["reasoning"],
+            "sources_used": parsed["sources_used"],
+            "raw_text": parsed["raw_text"],
+            "timestamp": getattr(msg, "timestamp", ""),
+            "changed_from_previous": changed,
+            "change_reason": change_reason,
+        })
+
+        previous_stance_by_agent[agent_id] = comparable_stance
+
+    return opinions
+
+
 def _graph_to_adjacency(graph_obj: Any) -> dict[str, list[str]]:
     """Convert a DiscussionGraph / NetworkX DiGraph to an adjacency dict."""
     # Accept GraphRouter, DiscussionGraph, or nx.DiGraph
@@ -408,19 +484,8 @@ def save_discussion_from_state(
             },
         })
 
-    # --- Extract opinions from messages ---
-    opinions = []
-    for msg in state.messages:
-        parsed = _extract_opinion(msg.content)
-        opinions.append({
-            "agent_id": msg.sender_id,
-            "round_num": msg.round_number,
-            "stance": parsed["stance"],
-            "reasoning": parsed["reasoning"],
-            "sources_used": parsed["sources_used"],
-            "raw_text": parsed["raw_text"],
-            "timestamp": getattr(msg, "timestamp", ""),
-        })
+    # --- Extract opinion evolution (Requirement 4.7) from messages ---
+    opinions = build_opinion_history(state)
 
     # --- Build metadata ---
     total_retrieval = sum(
