@@ -1,4 +1,5 @@
 from src.discussion.persistence import (
+    build_opinion_history,
     list_discussions,
     load_discussion,
     save_discussion,
@@ -18,6 +19,7 @@ __all__ = [
     "save_discussion_from_state",
     "load_discussion",
     "list_discussions",
+    "build_opinion_history",
     "DiscussionConfig",
     "DiscussionMessage",
     "DiscussionMetadata",
