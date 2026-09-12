@@ -43,6 +43,7 @@ class KnowledgeSearchTool(ToolInterface):
                 "content": item.content,
                 "source": item.source,
                 "score": item.score,
+                "metadata": item.metadata,
             }
             for item in results
         ]

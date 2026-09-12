@@ -1,5 +1,15 @@
+from dataclasses import asdict
+
 from .config import AgentConfig
 from .types import AgentResponse, RetrievedSource, ToolCall
+
+
+class AgentTurnError(RuntimeError):
+    """A failed turn with the evidence/tool attempts gathered before failure."""
+
+    def __init__(self, error: Exception, tool_calls: list[ToolCall]):
+        super().__init__(f"Agent turn failed ({type(error).__name__}): {error}")
+        self.tool_calls = list(tool_calls)
 
 
 class Agent:
@@ -24,49 +34,24 @@ class Agent:
             raise ValueError("task must be a non-empty string")
 
         memory = self.memory.get_relevant(task)
-        sources = self.retrieval.retrieve(task)
-        tools = self.tools.get_tools()
-        messages = self._build_messages(
-            task=task,
-            memory=memory,
-            sources=sources,
-        )
+        # Initial retrieval is automatic, but still needs an evidence trail.
+        initial = ToolCall(name="knowledge_search", arguments={"query": task},
+                           metadata={"mode": "automatic_initial"})
+        tool_calls = [initial]
+        try:
+            sources = self.retrieval.retrieve(task)
+            initial.result = [asdict(source) for source in sources]
+        except Exception as error:
+            initial.status = "failed"
+            initial.error = str(error)
+            raise AgentTurnError(error, tool_calls) from error
 
-        tool_calls: list[ToolCall] = []
-        result: object = None
-        for _ in range(self.max_tool_rounds + 1):
-            result = self.llm.generate(messages=messages, tools=tools)
-            content, requested_calls = self._parse_result(result)
-            if not requested_calls:
-                break
-
-            messages.append({"role": "assistant", "content": content})
-            for requested_call in requested_calls:
-                tool_result = self.tools.execute(
-                    requested_call.name,
-                    requested_call.arguments,
-                )
-                requested_call.result = tool_result
-                tool_calls.append(requested_call)
-                messages.append({
-                    "role": "tool",
-                    "name": requested_call.name,
-                    "content": str(tool_result),
-                })
-        else:
-            raise RuntimeError("LLM exceeded the maximum number of tool rounds")
-
-        content, _ = self._parse_result(result)
-        self.memory.add({
-            "task": task,
-            "response": content,
-        })
-
-        return AgentResponse(
-            content=content,
-            sources=sources,
-            tool_calls=tool_calls,
-        )
+        messages = self._build_messages(task=task, memory=memory, sources=sources)
+        content, tool_calls = self._complete_with_tools(messages, tool_calls)
+        self.memory.add({"task": task, "response": content})
+        return AgentResponse(content=content,
+                             sources=self._sources_from_tool_calls(tool_calls),
+                             tool_calls=tool_calls)
 
     def run_discussion_turn(
         self,
@@ -121,28 +106,34 @@ class Agent:
     def _complete_with_tools(
         self,
         messages: list[dict[str, str]],
+        tool_calls: list[ToolCall] | None = None,
     ) -> tuple[str, list[ToolCall]]:
         tools = self.tools.get_tools()
-        tool_calls: list[ToolCall] = []
-        for _ in range(self.max_tool_rounds + 1):
-            result = self.llm.generate(messages=messages, tools=tools)
-            content, requested_calls = self._parse_result(result)
-            if not requested_calls:
-                return content, tool_calls
+        tool_calls = list(tool_calls or [])
+        try:
+            for round_index in range(self.max_tool_rounds + 1):
+                result = self.llm.generate(messages=messages, tools=tools)
+                content, requested_calls = self._parse_result(result)
+                if not requested_calls:
+                    if not content.strip():
+                        raise RuntimeError("Model returned an empty response")
+                    return content, tool_calls
+                if round_index == self.max_tool_rounds:
+                    raise RuntimeError("LLM exceeded the maximum number of tool rounds")
 
-            messages.append({"role": "assistant", "content": content})
-            for requested_call in requested_calls:
-                requested_call.result = self.tools.execute(
-                    requested_call.name,
-                    requested_call.arguments,
-                )
-                tool_calls.append(requested_call)
-                messages.append({
-                    "role": "tool",
-                    "name": requested_call.name,
-                    "content": str(requested_call.result),
-                })
-        raise RuntimeError("LLM exceeded the maximum number of tool rounds")
+                messages.append({"role": "assistant", "content": content})
+                for call in requested_calls:
+                    tool_calls.append(call)
+                    try:
+                        call.result = self.tools.execute(call.name, call.arguments)
+                    except Exception as error:
+                        call.status = "failed"
+                        call.error = str(error)
+                        raise
+                    messages.append({"role": "tool", "name": call.name,
+                                     "content": str(call.result)})
+        except Exception as error:
+            raise AgentTurnError(error, tool_calls) from error
 
     @staticmethod
     def _format_discussion_messages(messages: list[dict[str, str]]) -> str:
@@ -167,6 +158,7 @@ class Agent:
                         content=str(item["content"]),
                         source=str(item.get("source", "Unknown")),
                         score=item.get("score"),
+                        metadata=dict(item.get("metadata") or {}),
                     )
                 )
         return sources

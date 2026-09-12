@@ -36,6 +36,8 @@ class DiscussionState:
 
     messages: list[DiscussionMessage] = field(default_factory=list, init=False)
 
+    failed_turns: list[dict] = field(default_factory=list, init=False)
+
     inboxes: dict[str, list[DiscussionMessage]] = field(default_factory=dict, init=False)
 
     next_inboxes: dict[str, list[DiscussionMessage]] = field(default_factory=dict, init=False

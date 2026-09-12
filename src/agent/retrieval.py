@@ -1,16 +1,7 @@
 from .interfaces import RetrievalInterface
 from .types import RetrievedSource
 
-# Assuming `search` handles its own connection and openrouter calls when None are provided.
-# If not, we might need to handle connection lifecycle here.
-try:
-    from src.rag.search import search
-except ImportError:
-    # Fallback if run from a different directory level
-    import sys
-    import os
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-    from src.rag.search import search
+from src.rag.search import RetrievalError, search
 
 
 class RAGRetrieval(RetrievalInterface):
@@ -30,9 +21,10 @@ class RAGRetrieval(RetrievalInterface):
             # We use the search function from Week 1 which returns a list of dictionaries:
             # doc_id, chunk_index, title, url, text, similarity
             raw_results = search(query, k=self.k)
-        except Exception as e:
-            print(f"Warning: RAG retrieval failed: {e}")
-            return []
+        except RetrievalError:
+            raise
+        except Exception as error:
+            raise RetrievalError("Knowledge retrieval failed.") from error
         
         sources = []
         for result in raw_results:

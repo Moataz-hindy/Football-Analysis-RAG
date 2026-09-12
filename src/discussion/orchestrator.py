@@ -1,5 +1,8 @@
 """Coordinates the agents participating in a discussion."""
 
+from dataclasses import asdict
+from typing import Callable
+
 from src.agent.agent import Agent
 from src.discussion.models import DiscussionMessage, DiscussionState
 from src.discussion.router import GraphRouter
@@ -35,7 +38,8 @@ class DiscussionRunError(RuntimeError):
 
 
 class DiscussionOrchestrator:
-    def __init__(self, agents: dict[str, Agent], router: GraphRouter) -> None:
+    def __init__(self, agents: dict[str, Agent], router: GraphRouter,
+                 checkpoint: Callable[[DiscussionState], None] | None = None) -> None:
         graph_agent_ids = set(router.graph.graph.nodes)
         provided_agent_ids = set(agents)
 
@@ -51,6 +55,7 @@ class DiscussionOrchestrator:
 
         self.agents = dict(agents)
         self.router = router
+        self.checkpoint = checkpoint
 
 
 
@@ -71,7 +76,14 @@ class DiscussionOrchestrator:
                 task=task,
                 received_messages=received_messages,
             )
-        except Exception as error:
+        except (Exception, KeyboardInterrupt) as error:
+            state.failed_turns.append({
+                "agent_id": agent_id,
+                "round_num": state.current_round,
+                "error_type": type(error).__name__,
+                "error": str(error),
+                "tool_events": [asdict(call) for call in getattr(error, "tool_calls", [])],
+            })
             raise DiscussionRunError(
                 agent_id=agent_id,
                 state=state,
@@ -130,6 +142,8 @@ class DiscussionOrchestrator:
             )
 
             state.record_and_queue(message)
+            if self.checkpoint:
+                self.checkpoint(state)
 
         return state
 
@@ -192,5 +206,7 @@ class DiscussionOrchestrator:
                 )
 
                 state.record_and_queue(message)
+                if self.checkpoint:
+                    self.checkpoint(state)
 
         return state

@@ -10,13 +10,18 @@ gets used.
 
 import os
 import sys
+from pathlib import Path
 
 import psycopg2
 from pgvector.psycopg2 import register_vector
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+class RetrievalError(RuntimeError):
+    """Knowledge infrastructure failed; this is not an empty search result."""
+
 
 SQL = """
     SELECT doc_id, chunk_index, title, url, text,
@@ -31,7 +36,7 @@ def get_client():
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     model = os.environ.get("OPENROUTER_MODEL", "").strip()
     if not api_key or not model or "your key here" in api_key.lower():
-        sys.exit("Missing/placeholder OPENAI_API_KEY or OPENROUTER_MODEL in .env.")
+        raise RetrievalError("Missing embedding API key or model in the project .env.")
     return OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1"), model
 
 
@@ -43,10 +48,15 @@ def get_connection():
             dbname=os.environ.get("DB_NAME", "football_intelligence"),
             user=os.environ.get("DB_USER", "postgres"),
             password=os.environ.get("DB_PASSWORD"),
+            connect_timeout=10,
         )
     except psycopg2.OperationalError as e:
-        sys.exit(f"Could not connect to Postgres: {e}\nIs the container running?")
-    register_vector(conn)
+        raise RetrievalError("Could not connect to Postgres. Check database availability and DB settings.") from e
+    try:
+        register_vector(conn)
+    except Exception as error:
+        conn.close()
+        raise RetrievalError("Could not initialize pgvector on the database connection.") from error
     return conn
 
 
@@ -64,14 +74,16 @@ def search(question, k=5, client=None, model=None, conn=None):
     if conn is None:
         conn = get_connection()
 
-    query_vec = embed_query(client, model, question)
-
-    cur = conn.cursor()
-    cur.execute(SQL, {"vec": query_vec, "k": k})
-    rows = cur.fetchall()
-    cur.close()
-    if own_conn:
-        conn.close()
+    try:
+        query_vec = embed_query(client, model, question)
+        with conn.cursor() as cur:
+            cur.execute(SQL, {"vec": query_vec, "k": k})
+            rows = cur.fetchall()
+    except Exception as error:
+        raise RetrievalError("Knowledge search failed while embedding the query or reading Postgres.") from error
+    finally:
+        if own_conn:
+            conn.close()
 
     return [
         {
@@ -85,6 +97,8 @@ def search(question, k=5, client=None, model=None, conn=None):
 def print_results(question, results):
     print(f"\nQuestion: {question}")
     print("-" * 60)
+    if not results:
+        print("No passages found. The database may be empty or contain no matching rows.")
     for i, r in enumerate(results, 1):
         preview = r["text"][:200].replace("\n", " ")
         print(f"{i}. [{r['doc_id']} chunk {r['chunk_index']}] "
@@ -104,14 +118,20 @@ def main():
     client, model = get_client()
     conn = get_connection()
     print("Football RAG search. Type a question (or 'quit' to exit).")
-    while True:
-        question = input("\n> ").strip()
-        if question.lower() in ("quit", "exit", ""):
-            break
-        results = search(question, k=5, client=client, model=model, conn=conn)
-        print_results(question, results)
-    conn.close()
+    try:
+        while True:
+            question = input("\n> ").strip()
+            if question.lower() in ("quit", "exit", ""):
+                break
+            results = search(question, k=5, client=client, model=model, conn=conn)
+            print_results(question, results)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RetrievalError as error:
+        print(f"Search failed: {error}", file=sys.stderr)
+        raise SystemExit(1)

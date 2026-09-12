@@ -1,3 +1,5 @@
+from dataclasses import asdict, is_dataclass
+
 import json
 import logging
 import os
@@ -57,6 +59,8 @@ def save_discussion(
         raise ValueError("Discussion 'discussion_id' must be a non-empty string")
 
     discussion_id = str(discussion_id).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", discussion_id):
+        raise ValueError("discussion_id may contain only letters, digits, underscores and hyphens")
     num_messages = len(data.get("messages", []))
     num_agents = len(config.get("agent_ids", []))
 
@@ -267,6 +271,8 @@ def load_discussion_by_id(
     FileNotFoundError: If no file exists for ``discussion_id``.
     """
     discussion_id = str(discussion_id).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", discussion_id):
+        raise ValueError("discussion_id may contain only letters, digits, underscores and hyphens")
     if not discussion_id:
         raise ValueError("discussion_id must be a non-empty string")
 
@@ -404,9 +410,7 @@ def _graph_to_adjacency(graph_obj: Any) -> dict[str, list[str]]:
     """Convert a DiscussionGraph / NetworkX DiGraph to an adjacency dict."""
     # Accept GraphRouter, DiscussionGraph, or nx.DiGraph
     g = graph_obj
-    if hasattr(g, "graph"):  # GraphRouter or DiscussionGraph wrapper
-        g = g.graph
-    if hasattr(g, "graph"):  # DiscussionGraph.graph → nx.DiGraph
+    while not hasattr(g, "nodes") and hasattr(g, "graph"):
         g = g.graph
 
     adjacency: dict[str, list[str]] = {}
@@ -420,7 +424,7 @@ def save_discussion_from_state(
     router: Any = None,
     output_dir: str | Path = "outputs",
     llm_model: str = "",
-    llm_temperature: float = 0.0,
+    llm_temperature: float | None = None,
     llm: Any = None,
     config_metadata: dict[str, Any] | None = None,
     duration_seconds: float = 0.0,
@@ -481,10 +485,15 @@ def save_discussion_from_state(
     # priority; otherwise capture from the LLM adapter.
     if not llm_model and llm is not None and hasattr(llm, "model"):
         llm_model = str(llm.model)
-    if not llm_temperature and llm is not None and hasattr(llm, "temperature"):
+    if llm_temperature is None and llm is not None and hasattr(llm, "temperature"):
         llm_temperature = float(llm.temperature)
 
     run_metadata = dict(config_metadata or {})
+    run_metadata.setdefault("schema_version", 2)
+    run_metadata["current_round"] = state.current_round
+    completed = [r for r in range(state.current_round + 1)
+                 if {m.sender_id for m in state.messages if m.round_number == r} == set(state.agent_ids)]
+    run_metadata["last_completed_round"] = max(completed, default=None)
     if llm is not None:
         if hasattr(llm, "base_url"):
             run_metadata.setdefault("llm_base_url", str(llm.base_url))
@@ -501,7 +510,7 @@ def save_discussion_from_state(
         "agent_ids": list(state.agent_ids),
         "graph": graph_dict,
         "llm_model": llm_model,
-        "llm_temperature": llm_temperature,
+        "llm_temperature": llm_temperature if llm_temperature is not None else 0.0,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "metadata": run_metadata,
     }
@@ -522,18 +531,26 @@ def save_discussion_from_state(
             elif isinstance(s, dict):
                 sources_used.append(s)
 
-        # Convert tool_calls to retrieval_events
+        # Keep every tool attempt, but count only knowledge searches as retrieval.
+        tool_events = []
         retrieval_events = []
         for tc in getattr(msg, "tool_calls", []):
-            name = tc.name if hasattr(tc, "name") else tc.get("name", "")
-            args = tc.arguments if hasattr(tc, "arguments") else tc.get("arguments", {})
-            result = tc.result if hasattr(tc, "result") else tc.get("result")
-
+            event = asdict(tc) if is_dataclass(tc) else dict(tc)
+            tool_events.append(event)
+            if event.get("name") != "knowledge_search":
+                continue
+            args = event.get("arguments", {})
+            result = event.get("result")
             retrieval_events.append({
-                "query": args.get("query", str(args)),
+                "query": args.get("query", ""),
                 "num_results": len(result) if isinstance(result, list) else 0,
-                "timestamp": getattr(msg, "timestamp", ""),
-                "metadata": {"tool_name": name, "arguments": args},
+                "timestamp": event.get("timestamp") or getattr(msg, "timestamp", ""),
+                "metadata": {
+                    "tool_name": event["name"], "arguments": args,
+                    "results": result, "status": event.get("status", "success"),
+                    "error": event.get("error"),
+                    **event.get("metadata", {}),
+                },
             })
 
         messages.append({
@@ -546,6 +563,7 @@ def save_discussion_from_state(
             "retrieval_events": retrieval_events,
             "metadata": {
                 "message_id": getattr(msg, "message_id", ""),
+                "tool_events": tool_events,
             },
         })
 
@@ -564,6 +582,7 @@ def save_discussion_from_state(
         "total_messages": len(messages),
         "total_retrieval_events": total_retrieval,
         "errors": errors or [],
+        "extra": {"failed_turns": getattr(state, "failed_turns", [])},
     }
 
     # --- Assemble and save ---

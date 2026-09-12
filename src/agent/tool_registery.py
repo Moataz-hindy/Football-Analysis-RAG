@@ -61,10 +61,7 @@ class ToolRegistery(ToolRegistryInterface):
             raise TypeError(f"Tool arguments must be a dict, got {type(arguments).__name__}")
 
         tool = self._tools[name]
-        try:
-            return tool.run(arguments)
-        except Exception as e:
-            return f"Error executing tool '{name}':{str(e)}"
+        return tool.run(arguments)
         
     def __contains__(self, name: str) -> bool:
         return name in self._tools

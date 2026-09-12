@@ -7,11 +7,19 @@ see docs/llm_provider.md section 4. Cohere needs its own adapter (section 4.7).
 """
 
 import os
+import logging
+import math
+import re
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError, APIStatusError, RateLimitError
 
 from .interfaces import LLMInterface, ToolInterface
+
+logger = logging.getLogger(__name__)
 
 # ToolInterface carries no JSON schema, so tools without a `parameters`
 # property fall back to an open object.
@@ -67,11 +75,15 @@ class OpenAICompatibleLLM(LLMInterface):
         self._model = model
         self._temperature = _env_float("LLM_TEMPERATURE", 0.2, temperature)
         self._max_tokens = _env_int("LLM_MAX_TOKENS", 1024, max_tokens)
+        self._max_retries = _env_int("LLM_MAX_RETRIES", 3, max_retries)
+        self._retry_max_wait = _env_float("LLM_RETRY_MAX_WAIT_SECONDS", 120.0)
+        if self._max_retries < 0 or not math.isfinite(self._retry_max_wait) or self._retry_max_wait <= 0:
+            raise ValueError("Invalid retry configuration")
         self._client = OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=_env_float("LLM_TIMEOUT_SECONDS", 60.0, timeout),
-            max_retries=_env_int("LLM_MAX_RETRIES", 3, max_retries),
+            max_retries=0,  # Retry here once, instead of stacking SDK and adapter retries.
         )
         self.last_response: Any = None       # usage / finish_reason, for debugging
         self._emitted: list[list[Any]] = []  # tool calls per round, for message repair
@@ -115,7 +127,7 @@ class OpenAICompatibleLLM(LLMInterface):
         if self._model == "qwen/qwen3.6-27b":
              kwargs["reasoning_effort"] = "none"
    
-        response = self._client.chat.completions.create(**kwargs)
+        response = self._request_with_retry(kwargs)
         self.last_response = response
 
         message = response.choices[0].message
@@ -126,6 +138,47 @@ class OpenAICompatibleLLM(LLMInterface):
         # Agent._parse_result() accepts this dict shape. Returning it instead of the
         # raw SDK object stops a null content from becoming the string "None".
         return {"content": message.content or "", "tool_calls": calls}
+
+    def _request_with_retry(self, kwargs):
+        for attempt in range(self._max_retries + 1):
+            try:
+                return self._client.chat.completions.create(**kwargs)
+            except (APIConnectionError, APIStatusError) as error:
+                transient = (isinstance(error, (RateLimitError, APIConnectionError))
+                             or error.status_code >= 500 or error.status_code == 408)
+                if not transient or attempt == self._max_retries:
+                    raise
+                delay = self._retry_delay(error, attempt)
+                if delay > self._retry_max_wait:
+                    # A long quota reset must not silently turn into hours of waiting.
+                    logger.warning("Provider delay exceeds retry budget; stopping for partial save.")
+                    raise
+                logger.warning("Temporary model failure (%s). Retrying request %d/%d in %.1fs.",
+                               type(error).__name__, attempt + 1, self._max_retries, delay)
+                time.sleep(delay)
+
+    @staticmethod
+    def _retry_delay(error, attempt):
+        headers = getattr(getattr(error, "response", None), "headers", {})
+        delay = None
+        try:
+            if headers.get("retry-after-ms"):
+                delay = float(headers["retry-after-ms"]) / 1000
+            elif headers.get("retry-after"):
+                value = headers["retry-after"]
+                try:
+                    delay = float(value)
+                except ValueError:
+                    delay = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            delay = None
+        if delay is None:
+            match = re.search(r"try again in\s+([0-9]+(?:\.[0-9]+)?)s", str(error), re.I)
+            if match:
+                delay = float(match.group(1))
+        if delay is not None and math.isfinite(delay) and delay >= 0:
+            return delay + 1.0  # Small margin beyond the provider's reset time.
+        return float(min(2 ** min(attempt + 1, 6), 60))
 
     def _repair_tool_messages(
         self,

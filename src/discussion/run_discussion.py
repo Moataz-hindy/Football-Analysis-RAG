@@ -17,6 +17,7 @@ reproducible; set ``LLM_TEMPERATURE=0`` in ``.env`` for more stable runs.
 """
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -89,6 +90,11 @@ def main(argv: list[str] | None = None) -> int:
 
     discussion_id = args.discussion_id or str(uuid4())
 
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", discussion_id):
+        raise ValueError("Use only letters, digits, underscores and hyphens in discussion IDs")
+    if (Path(args.output_dir) / f"{discussion_id}.json").exists():
+        raise ValueError("That discussion ID already exists; choose a new ID to preserve its history")
+
     router = GraphRouter()
     llm = OpenAICompatibleLLM()  # one shared adapter; config is captured from it
 
@@ -102,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         retrieval = RAGRetrieval(k=3)
         config = AgentConfig(
             persona=persona,
-            memory=ConversationMemory(),
+            memory=ConversationMemory(llm=llm),
             retrieval=retrieval,
             tools=ToolRegistry(
                 tools=[CalculatorTool(), KnowledgeSearchTool(retrieval=retrieval)]
@@ -111,7 +117,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         agents[agent_id] = Agent(config, max_tool_rounds=3)
 
-    orchestrator = DiscussionOrchestrator(agents=agents, router=router)
+    started = time.monotonic()
+
+    def checkpoint(state):
+        save_discussion_from_state(
+            state=state, router=router, output_dir=args.output_dir, llm=llm,
+            config_metadata={"persona_files": persona_files,
+                             "retrieval": "week1_pgvector_k3", "status": "running"},
+            duration_seconds=time.monotonic() - started,
+        )
+
+    orchestrator = DiscussionOrchestrator(agents=agents, router=router, checkpoint=checkpoint)
 
     print(f"Discussion ID:   {discussion_id}")
     print(f"Agents:          {len(agents)}")
@@ -120,7 +136,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Topic:           {args.topic}")
     print("Starting discussion... (LLM calls may take several minutes)", flush=True)
 
-    started = time.monotonic()
     errors: list[str] = []
     try:
         state = orchestrator.run(
@@ -144,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             config_metadata={
                 "persona_files": persona_files,
                 "retrieval": "week1_pgvector_k3",
-                "status": "failed_partial",
+                "status": "interrupted" if isinstance(error.__cause__, KeyboardInterrupt) else "failed_partial",
             },
             duration_seconds=time.monotonic() - started,
             errors=errors,
