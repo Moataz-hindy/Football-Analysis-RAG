@@ -19,8 +19,12 @@ reproducible; set ``LLM_TEMPERATURE=0`` in ``.env`` for more stable runs.
 import argparse
 import sys
 import time
+import os
 from pathlib import Path
 from uuid import uuid4
+
+# Fix for Windows SSL_CERT_FILE crash
+os.environ.pop("SSL_CERT_FILE", None)
 
 from dotenv import load_dotenv
 

@@ -75,7 +75,7 @@ def save_discussion(
 
         # Atomic write: write to temp file then rename
         with open(temp_file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
 
         os.replace(temp_file_path, file_path)
 
@@ -289,32 +289,32 @@ def _extract_opinion(content: str) -> dict[str, str]:
     reasoning = ""
     sources_used = ""
 
-    # Try to extract STANCE
+    # Try to extract STANCE (supports plain STANCE:, **STANCE:**, ### STANCE:, etc.)
     stance_match = re.search(
-        r"STANCE\s*:\s*(.+?)(?=\nREASONING\s*:|$)",
+        r"(?:^|\n)[\*\_#>\s]*\bSTANCE\b[\*\_]*\s*:\s*[\*\_]*(.+?)(?=\n[\*\_#>\s]*\bREASONING\b[\*\_]*\s*:|$)",
         content,
         re.DOTALL | re.IGNORECASE,
     )
     if stance_match:
-        stance = stance_match.group(1).strip()
+        stance = re.sub(r"^[\*\_]+|[\*\_]+$", "", stance_match.group(1).strip()).strip()
 
     # Try to extract REASONING
     reasoning_match = re.search(
-        r"REASONING\s*:\s*(.+?)(?=\nSOURCES?\s*USED\s*:|$)",
+        r"(?:^|\n)[\*\_#>\s]*\bREASONING\b[\*\_]*\s*:\s*[\*\_]*(.+?)(?=\n[\*\_#>\s]*\bSOURCES?\s*USED\b[\*\_]*\s*:|$)",
         content,
         re.DOTALL | re.IGNORECASE,
     )
     if reasoning_match:
-        reasoning = reasoning_match.group(1).strip()
+        reasoning = re.sub(r"^[\*\_]+|[\*\_]+$", "", reasoning_match.group(1).strip()).strip()
 
     # Try to extract SOURCES USED
     sources_match = re.search(
-        r"SOURCES?\s*USED\s*:\s*(.+)",
+        r"(?:^|\n)[\*\_#>\s]*\bSOURCES?\s*USED\b[\*\_]*\s*:\s*[\*\_]*(.+)",
         content,
         re.DOTALL | re.IGNORECASE,
     )
     if sources_match:
-        sources_used = sources_match.group(1).strip()
+        sources_used = re.sub(r"^[\*\_]+|[\*\_]+$", "", sources_match.group(1).strip()).strip()
 
     return {
         "stance": stance,
@@ -516,7 +516,7 @@ def save_discussion_from_state(
                 sources_used.append({
                     "content": s.content,
                     "source": getattr(s, "source", ""),
-                    "score": getattr(s, "score", None),
+                    "score": float(s.score) if getattr(s, "score", None) is not None else None,
                     "metadata": getattr(s, "metadata", {}),
                 })
             elif isinstance(s, dict):

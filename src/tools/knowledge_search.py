@@ -28,6 +28,16 @@ class KnowledgeSearchTool(ToolInterface):
             "and tactical stats. Argument: 'query' (str) - the search query topic."
         )
 
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search topic or question."}
+            },
+            "required": ["query"],
+        }
+
     def run(self, arguments: dict[str, Any]) -> Any:
         """Execute vector similarity search against the Week 1 database."""
         query = arguments.get("query")

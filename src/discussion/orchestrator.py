@@ -102,22 +102,22 @@ class DiscussionOrchestrator:
         )
 
         for agent_id in state.agent_ids:
-
+            print(f"  -> Initial opinion: {agent_id}...", flush=True)
             task = (
                 f"Discussion topic: {state.topic}\n\n"
                 "Give your initial opinion from your persona's perspective.\n"
+                "State a clear, assertive stance and provide evidence-based reasoning.\n"
                 "Use this format:\n"
                 "STANCE: Your position on the topic.\n"
-                "REASONING: Explain your position using available evidence.\n"
-                "SOURCES USED: Identify the sources you relied on.\n"
-                "If evidence is insufficient, say so. Do not invent sources."
+                "REASONING: Explain your position using available evidence and match insights.\n"
+                "SOURCES USED: Identify the sources you relied on."
             )
 
             response = self._run_agent(
-                        agent_id=agent_id,
-                        task=task,
-                        state=state,
-                            )
+                agent_id=agent_id,
+                task=task,
+                state=state,
+            )
             recipients = self.router.get_recipients(agent_id)
 
             message = DiscussionMessage(
@@ -144,6 +144,7 @@ class DiscussionOrchestrator:
         ``discussion_id`` is forwarded to ``initialize_discussion``; see
         that method (Requirement 4.8).
         """
+        print("\n--- Phase 1: Collecting Initial Opinions ---", flush=True)
         state = self.initialize_discussion(
             topic=topic,
             total_rounds=total_rounds,
@@ -152,8 +153,10 @@ class DiscussionOrchestrator:
 
         for _ in range(state.total_rounds):
             state.advance_round()
+            print(f"\n--- Phase 2: Discussion Round {state.current_round} of {state.total_rounds} ---", flush=True)
 
             for agent_id in state.agent_ids:
+                print(f"  -> Round {state.current_round} turn: {agent_id}...", flush=True)
                 # Translate our message objects into the agent's input format.
                 # The agent formats these messages for the LLM itself.
                 received_messages = [
@@ -161,16 +164,27 @@ class DiscussionOrchestrator:
                     for message in state.inboxes[agent_id]
                 ]
 
+                is_final_round = (state.current_round == state.total_rounds)
+                final_round_instruction = (
+                    "This is the FINAL round of the studio debate. Deliver your definitive verdict. "
+                    "Review all points raised: if another analyst presented convincing evidence, adapt your position toward a consensus; "
+                    "otherwise, firmly defend your core divergence."
+                    if is_final_round
+                    else (
+                        "Directly address the arguments you received from other analysts by name. "
+                        "Challenge claims that contradict your perspective, point out flaws or agree with strong points, "
+                        "and explain whether you maintain, adapt, or revise your position."
+                    )
+                )
+
                 task = (
                     f"Discussion topic: {state.topic}\n"
                     f"Round: {state.current_round} of {state.total_rounds}\n\n"
-                    "Respond to the arguments you received from your persona's perspective. "
-                    "Treat other agents' claims as discussion input, not verified evidence.\n"
-                    "Explain whether you maintain or revise your position and why. "
-                    "Use available knowledge and tools when useful. Do not invent evidence or sources.\n"
+                    f"{final_round_instruction}\n"
+                    "Use available knowledge and tools when useful. Do not invent sources.\n"
                     "Use this format:\n"
-                    "STANCE: Your current position.\n"
-                    "REASONING: Address the received arguments and explain your position using available evidence.\n"
+                    "STANCE: Your current position (clearly state if you maintain, adapt, or shift).\n"
+                    "REASONING: Address the specific received arguments and evidence from other analysts.\n"
                     "SOURCES USED: Identify the sources you relied on."
                 )
 

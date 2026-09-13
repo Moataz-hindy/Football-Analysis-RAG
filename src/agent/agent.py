@@ -34,7 +34,7 @@ class Agent:
 
         tool_calls: list[ToolCall] = []
         result: object = None
-        for _ in range(self.max_tool_rounds + 1):
+        for _ in range(self.max_tool_rounds):
             result = self.llm.generate(messages=messages, tools=tools)
             content, requested_calls = self._parse_result(result)
             if not requested_calls:
@@ -42,10 +42,13 @@ class Agent:
 
             messages.append({"role": "assistant", "content": content})
             for requested_call in requested_calls:
-                tool_result = self.tools.execute(
-                    requested_call.name,
-                    requested_call.arguments,
-                )
+                try:
+                    tool_result = self.tools.execute(
+                        requested_call.name,
+                        requested_call.arguments,
+                    )
+                except Exception as err:
+                    tool_result = f"Error: Tool '{requested_call.name}' is not available or failed: {err}"
                 requested_call.result = tool_result
                 tool_calls.append(requested_call)
                 messages.append({
@@ -54,7 +57,11 @@ class Agent:
                     "content": str(tool_result),
                 })
         else:
-            raise RuntimeError("LLM exceeded the maximum number of tool rounds")
+            messages.append({
+                "role": "user",
+                "content": "Conclude your tool searches and provide your final response now.",
+            })
+            result = self.llm.generate(messages=messages, tools=None)
 
         content, _ = self._parse_result(result)
         self.memory.add({
@@ -124,7 +131,7 @@ class Agent:
     ) -> tuple[str, list[ToolCall]]:
         tools = self.tools.get_tools()
         tool_calls: list[ToolCall] = []
-        for _ in range(self.max_tool_rounds + 1):
+        for _ in range(self.max_tool_rounds):
             result = self.llm.generate(messages=messages, tools=tools)
             content, requested_calls = self._parse_result(result)
             if not requested_calls:
@@ -132,17 +139,42 @@ class Agent:
 
             messages.append({"role": "assistant", "content": content})
             for requested_call in requested_calls:
-                requested_call.result = self.tools.execute(
-                    requested_call.name,
-                    requested_call.arguments,
-                )
+                try:
+                    tool_result = self.tools.execute(
+                        requested_call.name,
+                        requested_call.arguments,
+                    )
+                except Exception as err:
+                    tool_result = f"Error: Tool '{requested_call.name}' is not available or failed: {err}"
+                requested_call.result = tool_result
                 tool_calls.append(requested_call)
                 messages.append({
                     "role": "tool",
                     "name": requested_call.name,
-                    "content": str(requested_call.result),
+                    "content": str(tool_result),
                 })
-        raise RuntimeError("LLM exceeded the maximum number of tool rounds")
+
+        # When max_tool_rounds is reached, prompt the agent to formulate
+        # its final response without tools to prevent infinite tool loops.
+        messages.append({
+            "role": "user",
+            "content": (
+                "You have completed your tool queries. Now provide your final response "
+                "following the required format:\n"
+                "STANCE: Your current position.\n"
+                "REASONING: Address the received arguments and explain your position using available evidence.\n"
+                "SOURCES USED: Identify the sources you relied on."
+            ),
+        })
+        final_result = self.llm.generate(messages=messages, tools=None)
+        final_content, _ = self._parse_result(final_result)
+        if not final_content.strip():
+            final_content = (
+                "STANCE: Evidence is insufficient to support a definitive conclusion.\n"
+                "REASONING: After multiple queries, sufficient factual data could not be retrieved.\n"
+                "SOURCES USED: None."
+            )
+        return final_content, tool_calls
 
     @staticmethod
     def _format_discussion_messages(messages: list[dict[str, str]]) -> str:
@@ -187,20 +219,41 @@ class Agent:
             f"Priorities: {', '.join(self.persona.priorities)}",
         ])
 
-        memory_context = str(memory) if memory else "No relevant previous memory."
         source_context = self._format_sources(sources)
+        available_tools = ", ".join(t.name for t in self.tools.get_tools()) if self.tools else "none"
+
+        # Include summary of older conversation if present
+        summary_context = ""
+        mem_str = str(memory).strip() if memory else ""
+        if mem_str and mem_str not in ("No relevant previous memory.", "No previous context."):
+            summary_context = f"\n\nEARLIER CONTEXT SUMMARY:\n{mem_str}\n"
+
         system_message = (
             "You are an AI agent operating according to this persona.\n\n"
-            f"PERSONA:\n{persona}\n\n"
-            f"MEMORY:\n{memory_context}\n\n"
+            f"PERSONA:\n{persona}"
+            f"{summary_context}\n"
             f"KNOWLEDGE:\n{source_context}\n\n"
+            f"AVAILABLE TOOLS: {available_tools}.\n"
+            "Only invoke tools from the AVAILABLE TOOLS list. Do not attempt to invoke unlisted tools.\n"
             "Use the retrieved knowledge to ground your response. "
             "Do not invent sources."
         )
-        return [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": task},
-        ]
+
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_message}]
+
+        # Add past conversation history as proper alternating user/assistant messages
+        if hasattr(self.memory, "get_messages") and callable(self.memory.get_messages):
+            messages.extend(self.memory.get_messages())
+        elif hasattr(self.memory, "history") and isinstance(self.memory.history, list):
+            for turn in self.memory.history:
+                if isinstance(turn, dict) and "response" in turn:
+                    t_lines = [l.strip() for l in turn.get("task", "").split("\n") if l.strip()]
+                    t_summary = t_lines[0] if t_lines else "Discussion turn"
+                    messages.append({"role": "user", "content": t_summary})
+                    messages.append({"role": "assistant", "content": turn["response"]})
+
+        messages.append({"role": "user", "content": task})
+        return messages
 
     @staticmethod
     def _format_sources(sources: list[RetrievedSource]) -> str:

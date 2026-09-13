@@ -9,7 +9,7 @@ import psycopg2
 from pgvector.psycopg2 import register_vector
 from dotenv import load_dotenv
 
-from utils import EMBEDDINGS_DIR
+from src.rag.utils import EMBEDDINGS_DIR
 
 load_dotenv()
 

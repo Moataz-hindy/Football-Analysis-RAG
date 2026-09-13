@@ -69,26 +69,23 @@ class ConversationMemory(MemoryInterface):
         except Exception as e:
             print(f"[Memory Warning] Failed to generate summary (API error). Oldest message dropped. Error: {e}")
 
+    def get_messages(self) -> list[dict[str, str]]:
+        """
+        Returns the conversation history as a list of alternating user and assistant messages
+        suitable for direct inclusion in chat completion payloads.
+        """
+        messages = []
+        for turn in self.history:
+            task_lines = [line.strip() for line in turn.get("task", "").split("\n") if line.strip()]
+            task_summary = task_lines[0] if task_lines else "Discussion turn"
+            messages.append({"role": "user", "content": task_summary})
+            messages.append({"role": "assistant", "content": turn.get("response", "")})
+        return messages
+
     def get_relevant(self, query: str) -> str:
         """
-        Returns a formatted string containing the running summary followed by the recent exact history.
+        Returns the running summary of older messages that have fallen out of the window.
         """
-        lines = []
-        
-        # 1. Add the running summary of older messages
-        if self.summary != "No previous context.":
-            lines.append("=== Summary of Older Conversation ===")
-            lines.append(self.summary)
-            lines.append("=====================================\n")
-
-        # 2. Add the exact recent conversation history
-        if not self.history:
-            lines.append("No recent conversation.")
-        else:
-            lines.append("=== Recent Conversation History ===")
-            for i, turn in enumerate(self.history, start=1):
-                lines.append(f"--- Turn {i} ---")
-                lines.append(f"User Task: {turn['task']}")
-                lines.append(f"Agent Response: {turn['response']}")
-        
-        return "\n".join(lines)
+        if self.summary and self.summary != "No previous context.":
+            return self.summary
+        return ""

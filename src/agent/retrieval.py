@@ -40,7 +40,7 @@ class RAGRetrieval(RetrievalInterface):
                 RetrievedSource(
                     content=result.get("text", ""),
                     source=result.get("url") or result.get("title") or result.get("doc_id", "Unknown"),
-                    score=result.get("similarity", 0.0),
+                    score=float(result.get("similarity", 0.0)),
                     metadata={
                         "doc_id": result.get("doc_id"),
                         "chunk_index": result.get("chunk_index"),
