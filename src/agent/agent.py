@@ -229,6 +229,8 @@ class Agent:
                         )
                     )
             elif call.name == "web_search" and isinstance(call.result, str):
+                if call.result.strip().startswith("Error") or "Error executing tool" in call.result or "No web search results found" in call.result:
+                    continue
                 entries = call.result.split("\n---\n")
                 for entry in entries:
                     lines = entry.strip().split("\n")

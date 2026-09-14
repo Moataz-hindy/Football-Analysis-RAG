@@ -213,14 +213,20 @@ class OpenAICompatibleLLM(LLMInterface):
                         ),
                         "tool_calls": [],
                     }
-            elif "429" in err_str or "rate_limit" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
+            elif any(k in err_str for k in ("429", "rate_limit", "resource_exhausted", "quota", "503", "500", "502", "504", "unavailable", "overloaded", "capacity")):
                 import time
-                logger.warning("LLM rate limit encountered; waiting 5 seconds before retrying...")
-                time.sleep(5)
+                wait_seconds = 5
+                logger.warning(
+                    "LLM transient error or server capacity constraint encountered (%s); waiting %d seconds before retrying...",
+                    err,
+                    wait_seconds,
+                )
+                time.sleep(wait_seconds)
                 try:
                     response = self._client.chat.completions.create(**kwargs)
                 except Exception as retry_err:
-                    logger.warning("Retry with tools failed: %s; retrying without tools...", retry_err)
+                    logger.warning("Retry with tools failed: %s; retrying without tools after 5s...", retry_err)
+                    time.sleep(5)
                     kwargs.pop("tools", None)
                     kwargs.pop("tool_choice", None)
                     kwargs["messages"] = _sanitize_messages_without_tools(kwargs["messages"])
@@ -231,7 +237,7 @@ class OpenAICompatibleLLM(LLMInterface):
                         return {
                             "content": (
                                 "STANCE: Maintains tactical position pending further match evidence.\n"
-                                "REASONING: Provider request limits constrained retrieval during this turn; maintaining position based on established analysis.\n"
+                                "REASONING: Provider capacity limits temporarily constrained retrieval during this turn; maintaining position based on established analysis.\n"
                                 "SOURCES USED: None."
                             ),
                             "tool_calls": [],

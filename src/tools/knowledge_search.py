@@ -38,10 +38,20 @@ class KnowledgeSearchTool(ToolInterface):
             "required": ["query"],
         }
 
-    def run(self, arguments: dict[str, Any]) -> Any:
+    def run(self, arguments: dict[str, Any] | None = None, **kwargs: Any) -> Any:
         """Execute vector similarity search against the Week 1 database."""
-        query = arguments.get("query")
-        if not query or not isinstance(query, str):
+        params: dict[str, Any] = {}
+        if isinstance(arguments, dict):
+            params.update(arguments)
+        elif isinstance(arguments, str) and arguments.strip():
+            params["query"] = arguments.strip()
+        params.update(kwargs)
+
+        query = params.get("query") or params.get("queries") or params.get("search_query") or params.get("q")
+        if isinstance(query, list) and query:
+            query = " ".join(str(item).strip() for item in query if str(item).strip())
+
+        if not query or not isinstance(query, str) or not query.strip():
             raise ValueError("KnowledgeSearchTool requires a non-empty string 'query' argument.")
 
         # Perform pgvector search

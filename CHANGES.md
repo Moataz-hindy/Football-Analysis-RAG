@@ -23,7 +23,12 @@ However, running the discussion immediately crashed due to a cascade of blocking
 ### After
 - The full discussion runs cleanly across **6 analyst agents**, through **Phase 1** (initial opinions) and **Phase 2** (3 debate rounds), generating **24 verified messages** and **24 opinion evolutions**.
 - Every discussion run is automatically and atomically persisted to `outputs/<discussion_id>.json` and can be reconstructed anytime via `load_discussion_by_id`.
-- All **88 unit tests** in the test suite pass in ~2 seconds.
+- All **126 unit tests** in the test suite pass cleanly in ~3 seconds.
+- **Gemini Web Search & API Hardening**: Resolved root causes of Gemini tool call failures:
+  1. `WebSearchTool` now accepts `queries` (list of strings as emitted by Gemini multi-claim verification), `query`, unpacked keyword arguments, and alternative keys (`search_query`, `q`), while safely ignoring vendor metadata like `annotations`.
+  2. `Agent._sources_from_tool_calls` now skips tool error strings, preventing error messages from polluting `sources_used`.
+  3. `persistence.py` now accurately counts web search results (`num_results`) for string responses rather than recording `0`.
+  4. `OpenAICompatibleLLM` now automatically catches `503`, `UNAVAILABLE`, and server capacity limits with backoff retry, protecting against transient provider overloads.
 
 ---
 
@@ -641,4 +646,54 @@ This happened because:
    assert len(r.opinions) == 24
    ```
    - **Result**: Successfully verified without errors.
+
+---
+
+### Category 16: Conditional Flexibility in Discussion Orchestrator & Concession Detection
+
+#### Files Modified
+- [`src/discussion/orchestrator.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/discussion/orchestrator.py)
+- [`src/discussion/persistence.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/discussion/persistence.py)
+
+#### What Was the Problem Before?
+In multi-round debates, agents with strong personas defaulted to defensive repetition (`"I maintain my position that..."`), resulting in flat trajectory lines ($0.85 \to 0.85 \to 0.85$) and `zero_movement` influence scores. Agents were instructed to "cross-examine" and "challenge contradiction," which discouraged genuine intellectual concessions even when confronted with indisputable match stats.
+
+#### How Did It Change?
+1. **Conditional Flexibility Directives in `orchestrator.py`**:
+   - In both intermediate rounds and the final round, agents are explicitly instructed to maintain intellectual honesty:
+     > *"CONDITIONAL FLEXIBILITY & CONCESSION: Defend your analytical principles vigorously, but you are NOT expected to be immovable or rigid. If a colleague presents concrete, verified match statistics, tactical frameworks, or physiological realities that expose an oversight in your argument, you should actively acknowledge it, make targeted concessions, and adapt or shift your stance accordingly."*
+2. **Expanded Shift Patterns in `persistence.py`**:
+   - Added regex patterns for `adapt`, `adapted`, `adapting`, `adjust`, `adjusted`, `adjusting`, `partially agree`, and `reconsider` to `_SHIFT_PATTERNS`, ensuring that subtle or partial concessions are reliably captured as opinion evolution.
+
+---
+
+### Category 17: Week 4 Analytics Core (Tasks 1, 2 & 3)
+
+#### Files Added / Modified
+- [`src/analytics/__init__.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/analytics/__init__.py)
+- [`src/analytics/models.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/analytics/models.py)
+- [`src/analytics/stance.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/analytics/stance.py)
+- [`src/analytics/agreement.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/analytics/agreement.py)
+- [`src/analytics/influence.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/src/analytics/influence.py)
+- [`docs/week4_tasks_1_2_3.md`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/docs/week4_tasks_1_2_3.md)
+- [`tests/test_analytics_stance.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/tests/test_analytics_stance.py)
+- [`tests/test_analytics_agreement.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/tests/test_analytics_agreement.py)
+- [`tests/test_analytics_influence.py`](file:///c:/Users/moata/Downloads/Football-Analysis-RAG-main/Football-Analysis-RAG-main/tests/test_analytics_influence.py)
+
+#### What Was Implemented?
+1. **Task 1: Universal Stance Extraction & Trajectories**:
+   - Universal dual-engine: Batched zero-shot LLM evaluation (`score_snapshots_with_llm`) evaluating all snapshots across rounds against any topic in a single prompt, backed by a local semantic polarity fallback for offline test suites.
+   - Pydantic models `AgentStancePoint` and `OpinionTrajectoryResult`.
+2. **Task 2: Per-Round Agreement Metric**:
+   - Computes all $\binom{N}{2}$ pairwise stance distances, mean dispersion $\bar{D}_r$, variance $\sigma_r^2$, normalized agreement scalar $A_r = 1.0 - \frac{\bar{D}_r}{2.0} \in [0.0, 1.0]$, and overall convergence trends (`Converging`, `Diverging`, `Stable`).
+   - Pydantic models `RoundAgreement` and `DiscussionAgreementResult`.
+3. **Task 3: Per-Agent Network Influence Scores**:
+   - Computes directional convergence pull along message routing edges $(a \to b)$:
+     $$\text{Pull}_{a \to b, r} = \Delta S_{b, r} \times \text{sign}(S_{a, r-1} - S_{b, r-1})$$
+   - Explicitly handles zero-movement discussions per Week 4 Section 16 (`status="zero_movement"`, `influence_score=None`) and includes statistical association vs. causation disclaimers per Section 15.
+   - Pydantic models `AgentInfluence` and `DiscussionInfluenceResult`.
+4. **Verification**:
+   - 18 dedicated unit tests across `test_analytics_stance.py`, `test_analytics_agreement.py`, and `test_analytics_influence.py`.
+   - All 124 repository tests passing.
+
 

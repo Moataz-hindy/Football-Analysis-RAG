@@ -102,3 +102,31 @@ def test_agent_sources_from_web_search_tool_call():
     assert "Ziko goal ruled out" in sources[0].content
     assert sources[0].metadata["title"] == "VAR Disallowed Goal"
 
+
+def test_web_search_tool_queries_list(monkeypatch):
+    from src.tools.web_search import WebSearchTool
+    tool = WebSearchTool(api_key="")
+    monkeypatch.setattr(
+        tool,
+        "_duckduckgo_search",
+        lambda q: f"Title: Result for {q}\nURL: https://example.com/{q}\nContent: Match facts.",
+    )
+    # Test with list of queries as sent by Gemini
+    res = tool.run({"queries": ["England vs France", "Tuchel tactics"]})
+    assert "England vs France" in res
+    assert "Tuchel tactics" in res
+
+
+def test_agent_sources_ignores_tool_errors():
+    from src.agent.agent import Agent
+    from src.agent.types import ToolCall
+
+    error_call = ToolCall(
+        name="web_search",
+        arguments={"queries": ["test"]},
+        result="Error executing tool 'web_search': web_search requires a non-empty string 'query' argument.",
+    )
+    sources = Agent._sources_from_tool_calls([error_call])
+    assert len(sources) == 0
+
+

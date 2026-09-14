@@ -344,8 +344,11 @@ _SHIFT_PATTERNS = [
     r"\b(?:concede|conceded|conceding)\b",
     r"\b(?:shift|shifted|shifting)\s+(?:my|the)?\s*(?:position|stance|view)",
     r"\b(?:change|changed|changing)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:adapt|adapted|adapting)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:adjust|adjusted|adjusting)\s+(?:my|the)?\s*(?:position|stance|view)",
     r"\b(?:now\s+agree|now\s+accept|now\s+conclude|now\s+believe)\b",
     r"\b(?:revise|revised|revising)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:partially\s+agree|reconsider|reconsidered)\b",
 ]
 
 
@@ -581,9 +584,28 @@ def save_discussion_from_state(
             args = tc.arguments if hasattr(tc, "arguments") else tc.get("arguments", {})
             result = tc.result if hasattr(tc, "result") else tc.get("result")
 
+            if isinstance(result, list):
+                num_results = len(result)
+            elif isinstance(result, str):
+                if result.strip().startswith("Error") or "No web search results found" in result:
+                    num_results = 0
+                else:
+                    cards = [c.strip() for c in result.split("\n---\n") if c.strip()]
+                    num_results = len(cards) if cards else 1
+            elif result is not None:
+                num_results = 1
+            else:
+                num_results = 0
+
+            query_val = args.get("query") or args.get("queries") or args.get("search_query") or str(args)
+            if isinstance(query_val, list):
+                query_str = " | ".join(str(q) for q in query_val)
+            else:
+                query_str = str(query_val)
+
             retrieval_events.append({
-                "query": args.get("query", str(args)),
-                "num_results": len(result) if isinstance(result, list) else 0,
+                "query": query_str,
+                "num_results": num_results,
                 "timestamp": getattr(msg, "timestamp", ""),
                 "metadata": {"tool_name": name, "arguments": args},
             })

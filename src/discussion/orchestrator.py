@@ -174,6 +174,7 @@ class DiscussionOrchestrator:
                         "This is the FINAL round of the studio debate. Deliver your definitive, conclusive closing verdict.\n"
                         "- Provide a fresh, comprehensive synthesis summarizing the core conflict of the debate and your final judgment.\n"
                         "- Address unresolved points of friction directly (e.g. the procedural validity of the VAR review vs. the perception of momentum disruption).\n"
+                        "- CONDITIONAL FLEXIBILITY & INTELLECTUAL HONESTY: If peer arguments, tracking data, or rule analyses over the course of this debate have persuaded you or revealed blind spots in your initial view, explicitly state your concessions or evolved synthesis. Do not stubbornly repeat your opening position if the collective evidence points elsewhere.\n"
                         "- CRITICAL ANTI-REPETITION MANDATE: Do NOT copy, re-emit, or recycle paragraphs or phrases from your earlier turns. Any recycled text will be automatically rejected. Deliver a completely fresh conclusive closing argument.\n"
                         "- CRITICAL ANTI-HALLUCINATION & METRIC GROUNDING: Base your conclusive synthesis strictly on verified match facts and reports.\n"
                         "- CRITICAL: Avoid sycophancy, cheerleading, and filler praise ('It is refreshing to see consensus', 'I agree with my esteemed colleagues'). Focus 100% on analytical substance."
@@ -186,6 +187,10 @@ class DiscussionOrchestrator:
                         "- If an analyst presented concrete match facts or data (e.g. scorelines, penalties, match timeline), "
                         "you MUST directly address and reconcile those facts with your thesis.\n"
                         "- If an opposing analyst's premise contradicts established match events, directly challenge their contradiction with retrieved evidence.\n"
+                        "- CONDITIONAL FLEXIBILITY & CONCESSION: Defend your analytical principles vigorously, but you are NOT expected to be immovable or rigid. "
+                        "If a colleague presents concrete, verified match statistics (e.g. duel win rates, xG, possession counts), tactical frameworks, or physiological realities that expose an oversight in your argument, "
+                        "you should actively acknowledge it, make targeted concessions, and adapt or shift your stance accordingly. "
+                        "High-level debate progress values responding honestly to strong evidence rather than digging in your heels.\n"
                         "- CRITICAL ANTI-HALLUCINATION & METRIC GROUNDING: Do NOT invent, confabulate, or extrapolate ungrounded numerical metrics, spatial measurements (e.g. '4.2 meters between lines', exact physical distances), or pseudo-statistical formulas not in your sources. "
                         "If a colleague introduces an ungrounded metric or numerical claim lacking source attribution, do NOT adopt it as fact or treat it as a 'smoking gun'; challenge its empirical validity and source.\n"
                         "- CRITICAL: Do NOT use conversational filler, pleasantries, or mutual congratulations "
@@ -193,7 +198,7 @@ class DiscussionOrchestrator:
                         "Jump immediately into substantive critique and evidence.\n"
                         "- CRITICAL: Do NOT repeat paragraphs from your previous turns or recycle boilerplate text. "
                         "Advance a new, deeper argument or interrogate a specific counter-point in every round.\n"
-                        "- Explain clearly whether you maintain, adapt, or revise your position."
+                        "- Explain clearly whether you maintain, adapt, or shift your position (e.g. 'I shift my view to acknowledge...', 'While maintaining my perspective on X, I concede Y...')."
                     )
 
                 task = (
@@ -202,7 +207,7 @@ class DiscussionOrchestrator:
                     f"{round_instruction}\n\n"
                     "If you need to verify claims, call `web_search` or `knowledge_search` first. "
                     "When ready, provide your response in this format:\n"
-                    "STANCE: Your current position (clearly state if you maintain, adapt, or shift).\n"
+                    "STANCE: Your current position (clearly state if you maintain, adapt, or shift your stance based on peer evidence).\n"
                     "REASONING: Address the specific received arguments and evidence from other analysts.\n"
                     "SOURCES USED: Identify the sources you relied on."
                 )
