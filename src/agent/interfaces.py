@@ -34,6 +34,10 @@ class ToolInterface(ABC):
     def description(self) -> str:
         pass
 
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "additionalProperties": True}
+
     @abstractmethod
     def run(self, arguments: dict[str, Any]) -> Any:
         pass

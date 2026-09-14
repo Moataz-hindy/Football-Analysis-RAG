@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from .interfaces import MemoryInterface
 
@@ -65,26 +66,30 @@ class ConversationMemory(MemoryInterface):
         except Exception as error:
             logger.warning("Memory summary failed (%s); keeping original turns.", type(error).__name__)
 
+    def get_messages(self) -> list[dict[str, str]]:
+        """
+        Returns the conversation history as a list of alternating user and assistant messages
+        suitable for direct inclusion in chat completion payloads.
+        """
+        messages = []
+        for index, turn in enumerate(self.history):
+            raw_task = turn.get("task", "")
+            round_match = re.search(r"Round:\s*(\d+)\s*of\s*(\d+)", raw_task)
+            if round_match:
+                task_summary = f"Discussion Turn (Round {round_match.group(1)} of {round_match.group(2)})"
+            elif "initial opinion" in raw_task.lower():
+                task_summary = "Discussion Turn (Round 0: Initial Opinion)"
+            else:
+                task_lines = [line.strip() for line in raw_task.split("\n") if line.strip()]
+                task_summary = task_lines[0] if task_lines else f"Discussion Turn {index + 1}"
+            messages.append({"role": "user", "content": task_summary})
+            messages.append({"role": "assistant", "content": turn.get("response", "")})
+        return messages
+
     def get_relevant(self, query: str) -> str:
         """
-        Returns a formatted string containing the running summary followed by the recent exact history.
+        Returns the running summary of older messages that have fallen out of the window.
         """
-        lines = []
-        
-        # 1. Add the running summary of older messages
-        if self.summary != "No previous context.":
-            lines.append("=== Summary of Older Conversation ===")
-            lines.append(self.summary)
-            lines.append("=====================================\n")
-
-        # 2. Add the exact recent conversation history
-        if not self.history:
-            lines.append("No recent conversation.")
-        else:
-            lines.append("=== Recent Conversation History ===")
-            for i, turn in enumerate(self.history, start=1):
-                lines.append(f"--- Turn {i} ---")
-                lines.append(f"User Task: {turn['task']}")
-                lines.append(f"Agent Response: {turn['response']}")
-        
-        return "\n".join(lines)
+        if self.summary and self.summary != "No previous context.":
+            return self.summary
+        return ""

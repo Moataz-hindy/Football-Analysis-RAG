@@ -63,56 +63,64 @@ class WebSearchTool(ToolInterface):
                 "web_search requires a non-empty string 'query' argument."
             )
 
-        if not self.api_key:
-            return "Error: TAVILY_API_KEY is not configured."
+        if self.api_key:
+            try:
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                }
+                payload = {
+                    "query": query.strip(),
+                    "search_depth": "basic",
+                    "max_results": self.max_results,
+                    "include_answer": True,
+                }
+                response = requests.post(
+                    self.endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=20,
+                )
+                response.raise_for_status()
+                data = response.json()
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-        }
+                formatted_results = []
+                if data.get("answer"):
+                    formatted_results.append(
+                        f"Tavily-generated summary: {data['answer']}"
+                    )
 
-        payload = {
-            "query": query.strip(),
-            "search_depth": "basic",
-            "max_results": self.max_results,
-            "include_answer": True,
-        }
+                for result in data.get("results", []):
+                    formatted_results.append(
+                        f"Title: {result.get('title', '')}\n"
+                        f"URL: {result.get('url', '')}\n"
+                        f"Content: {result.get('content', '')}"
+                    )
 
-        # This entire block belongs inside run().
+                if formatted_results:
+                    return "\n---\n".join(formatted_results)
+            except Exception:
+                # Fall back to DuckDuckGo search if Tavily fails or times out
+                pass
+
+        return self._duckduckgo_search(query.strip())
+
+    def _duckduckgo_search(self, query: str) -> str:
+        """Search the web using DuckDuckGo (no API key required)."""
         try:
-            response = requests.post(
-                self.endpoint,
-                headers=headers,
-                json=payload,
-                timeout=20,
-            )
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
 
-            # Raise an exception for unsuccessful HTTP responses.
-            response.raise_for_status()
-
-            # Convert the JSON response into Python data.
-            data = response.json()
-
-            formatted_results = []
-
-            if data.get("answer"):
-                formatted_results.append(
-                    f"Tavily-generated summary: {data['answer']}"
-                )
-
-            for result in data.get("results", []):
-                formatted_results.append(
-                    f"Title: {result.get('title', '')}\n"
-                    f"URL: {result.get('url', '')}\n"
-                    f"Content: {result.get('content', '')}"
-                )
-
-            if not formatted_results:
+            results = list(DDGS().text(query, max_results=self.max_results))
+            if not results:
                 return "No web search results found."
-
-            return "\n---\n".join(formatted_results)
-
-        except requests.exceptions.RequestException as error:
-            return f"Error executing web search: {error}"
-
-        except ValueError:
-            return "Error: Tavily returned an invalid JSON response."
+            formatted = []
+            for r in results:
+                title = r.get("title", "")
+                url = r.get("href") or r.get("url", "")
+                snippet = r.get("body") or r.get("content", "")
+                formatted.append(f"Title: {title}\nURL: {url}\nContent: {snippet}")
+            return "\n---\n".join(formatted)
+        except Exception as err:
+            raise RuntimeError("Web search failed after provider fallback.") from err

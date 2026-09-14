@@ -6,8 +6,8 @@ Mistral, and a local Ollama. Switching provider is three environment variables -
 see docs/llm_provider.md section 4. Cohere needs its own adapter (section 4.7).
 """
 
-import os
 import logging
+import os
 import math
 import re
 import time
@@ -21,8 +21,7 @@ from .interfaces import LLMInterface, ToolInterface
 
 logger = logging.getLogger(__name__)
 
-# ToolInterface carries no JSON schema, so tools without a `parameters`
-# property fall back to an open object.
+# Legacy tools without a `parameters` property fall back to an open object.
 DEFAULT_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {},
@@ -210,27 +209,38 @@ class OpenAICompatibleLLM(LLMInterface):
                 continue
 
             calls = rounds.pop(0)
+            repaired_calls: list[dict[str, Any]] = []
+            for call in calls:
+                call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else "")
+                func = getattr(call, "function", None) or (call.get("function") if isinstance(call, dict) else None)
+                fname = getattr(func, "name", None) or (func.get("name") if isinstance(func, dict) else "")
+                fargs = getattr(func, "arguments", None) or (func.get("arguments") if isinstance(func, dict) else "")
+                c_dict: dict[str, Any] = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": fname,
+                        "arguments": fargs,
+                    },
+                }
+                # Preserve provider-specific extra content (such as Google Gemini thought_signature)
+                extra = getattr(call, "extra_content", None) or (call.get("extra_content") if isinstance(call, dict) else None)
+                if extra:
+                    c_dict["extra_content"] = extra
+                repaired_calls.append(c_dict)
+
             repaired.append({
                 "role": "assistant",
                 "content": message.get("content") or None,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.function.name,
-                            "arguments": call.function.arguments,
-                        },
-                    }
-                    for call in calls
-                ],
+                "tool_calls": repaired_calls,
             })
             index += 1
             for call in calls:
+                call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else "")
                 if index < len(messages) and messages[index].get("role") == "tool":
                     repaired.append({
                         "role": "tool",
-                        "tool_call_id": call.id,
+                        "tool_call_id": call_id,
                         "content": messages[index].get("content", ""),
                     })
                     index += 1

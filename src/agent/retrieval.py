@@ -9,7 +9,7 @@ class RAGRetrieval(RetrievalInterface):
     Integrates with the Week 1 pgvector knowledge retrieval system.
     """
 
-    def __init__(self, k: int = 3):
+    def __init__(self, k: int = 6):
         self.k = k
 
     def retrieve(self, query: str) -> list[RetrievedSource]:
@@ -32,11 +32,12 @@ class RAGRetrieval(RetrievalInterface):
                 RetrievedSource(
                     content=result.get("text", ""),
                     source=result.get("url") or result.get("title") or result.get("doc_id", "Unknown"),
-                    score=result.get("similarity", 0.0),
+                    score=float(result["similarity"]) if result.get("similarity") is not None else None,
                     metadata={
                         "doc_id": result.get("doc_id"),
                         "chunk_index": result.get("chunk_index"),
-                        "title": result.get("title")
+                        "title": result.get("title"),
+                        "retrieval_mode": result.get("retrieval_mode", "vector")
                     }
                 )
             )

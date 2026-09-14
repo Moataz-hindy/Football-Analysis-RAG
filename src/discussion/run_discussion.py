@@ -20,8 +20,12 @@ import argparse
 import re
 import sys
 import time
+import os
 from pathlib import Path
 from uuid import uuid4
+
+# Fix for Windows SSL_CERT_FILE crash
+os.environ.pop("SSL_CERT_FILE", None)
 
 from dotenv import load_dotenv
 
@@ -40,6 +44,7 @@ from src.discussion.persistence import (
 from src.discussion.router import GraphRouter
 from src.tools.calculator import CalculatorTool
 from src.tools.knowledge_search import KnowledgeSearchTool
+from src.tools.web_search import WebSearchTool
 
 DEFAULT_TOPIC = (
     "Evaluate Japan's 5-4-1 low block against Spain in the 2022 World Cup. "
@@ -105,13 +110,17 @@ def main(argv: list[str] | None = None) -> int:
         persona = load_persona(Path(args.personas_dir) / persona_file)
         persona_files[agent_id] = persona_file
 
-        retrieval = RAGRetrieval(k=3)
+        retrieval = RAGRetrieval(k=6)
         config = AgentConfig(
             persona=persona,
             memory=ConversationMemory(llm=llm),
             retrieval=retrieval,
             tools=ToolRegistry(
-                tools=[CalculatorTool(), KnowledgeSearchTool(retrieval=retrieval)]
+                tools=[
+                    CalculatorTool(),
+                    KnowledgeSearchTool(retrieval=retrieval),
+                    WebSearchTool(),
+                ]
             ),
             llm=llm,
         )

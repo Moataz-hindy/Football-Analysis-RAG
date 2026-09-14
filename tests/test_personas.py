@@ -264,12 +264,12 @@ class TestLoadAllPersonas:
         personas = load_all_personas(PERSONAS_DIR)
         assert len(personas) >= 6
         expected_names = {
-            "Tactical Analyst",
-            "Statistical Analyst",
-            "Performance Analyst",
-            "Refereeing Analyst",
-            "Context Analyst",
-            "Fan Analyst",
+            "Tactical Coach",
+            "Lead Data Analyst",
+            "International Ex-Player Pundit",
+            "VAR & Refereeing Expert",
+            "Lead Studio Host & Anchor",
+            "Egyptian & African Football Supporter",
         }
         assert expected_names.issubset(set(personas.keys()))
 
@@ -319,8 +319,8 @@ class TestPersonaDifferences:
     )
     def test_tactical_vs_statistical_differ(self):
         personas = load_all_personas(PERSONAS_DIR)
-        tactical = personas["Tactical Analyst"]
-        statistical = personas["Statistical Analyst"]
+        tactical = personas.get("Tactical Coach") or personas["Tactical Analyst"]
+        statistical = personas.get("Lead Data Analyst") or personas["Statistical Analyst"]
 
         # Names differ
         assert tactical.name != statistical.name
@@ -390,3 +390,53 @@ class TestAgentConfigCompatibility:
         )
         assert config.persona is persona
         assert config.persona.name == "Test"
+
+
+def test_agent_build_messages_alternating_history():
+    from src.agent.agent import Agent, AgentConfig
+    from src.agent.persona import Persona
+    from src.agent.memory import ConversationMemory
+    from unittest.mock import MagicMock
+
+    persona = Persona(
+        _name="Tactical Analyst",
+        _background="Coach",
+        _stance="Defend deep",
+        _communication_style="Direct",
+        _expertise=["Defense"],
+        _priorities=["Discipline"],
+    )
+    memory = ConversationMemory()
+    memory.add({"task": "Discussion topic: Japan vs Spain", "response": "STANCE: Solid low block."})
+
+    tools = MagicMock()
+    tools.get_tools.return_value = []
+    retrieval = MagicMock()
+
+    config = AgentConfig(
+        persona=persona,
+        memory=memory,
+        tools=tools,
+        retrieval=retrieval,
+        llm=MagicMock(),
+    )
+    agent = Agent(config)
+    messages = agent._build_messages(
+        task="Round 1 turn: respond to other agents",
+        memory="",
+        sources=[],
+    )
+
+    # 1. System prompt does NOT contain raw memory dump
+    assert "MEMORY:" not in messages[0]["content"]
+    assert "You are an AI agent operating according to this persona." in messages[0]["content"]
+
+    # 2. Past turn is formatted as real alternating user and assistant messages
+    assert messages[1]["role"] == "user"
+    assert messages[1]["content"] == "Discussion topic: Japan vs Spain"
+    assert messages[2]["role"] == "assistant"
+    assert messages[2]["content"] == "STANCE: Solid low block."
+
+    # 3. Current turn is the final user message
+    assert messages[3]["role"] == "user"
+    assert messages[3]["content"] == "Round 1 turn: respond to other agents"

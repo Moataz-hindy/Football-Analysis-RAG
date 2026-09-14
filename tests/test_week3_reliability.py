@@ -249,7 +249,7 @@ class ScriptedLLM:
                 {"name": "calculator", "arguments": {"expression": "2+2"}},
             ]}
         self.finished += 1
-        return {"content": "STANCE: support\nREASONING: compact lines deny space\nSOURCES USED: doc_demo"}
+        return {"content": f"STANCE: support\nREASONING: compact lines deny space (turn {self.finished})\nSOURCES USED: doc_demo"}
 
 
 @pytest.mark.parametrize("fail_at,interrupt,status,count", [

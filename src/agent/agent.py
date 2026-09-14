@@ -33,13 +33,14 @@ class Agent:
         if not isinstance(task, str) or not task.strip():
             raise ValueError("task must be a non-empty string")
 
+        search_query = self._build_persona_query(task)
         memory = self.memory.get_relevant(task)
         # Initial retrieval is automatic, but still needs an evidence trail.
-        initial = ToolCall(name="knowledge_search", arguments={"query": task},
+        initial = ToolCall(name="knowledge_search", arguments={"query": search_query},
                            metadata={"mode": "automatic_initial"})
         tool_calls = [initial]
         try:
-            sources = self.retrieval.retrieve(task)
+            sources = self.retrieval.retrieve(search_query)
             initial.result = [asdict(source) for source in sources]
         except Exception as error:
             initial.status = "failed"
@@ -87,12 +88,44 @@ class Agent:
             sources=[],
         )
         messages[0]["content"] += (
-            "\n\nThis is a live discussion turn. If a received claim needs "
-            "verification or additional football knowledge, use the "
-            "knowledge_search tool before answering."
+            "\n\nThis is a live discussion turn with tools enabled (`web_search`, `knowledge_search`, `calculator`).\n"
+            "MANDATORY VERIFICATION DIRECTIVE:\n"
+            "Review the claims and arguments in the received messages from other analysts:\n"
+            "- If an opponent alleges officiating bias, referee influence, controversial decisions (e.g. VAR reviews, disallowed goals, penalty calls), "
+            "or contested match events, you MUST invoke `web_search` or `knowledge_search` first to verify the facts before answering.\n"
+            "- If you want to challenge an opponent's factual assertion or if critical match facts are in dispute, "
+            "use `web_search` (e.g., query: '<match> referee VAR disallowed goal controversy') to retrieve verified reporting.\n"
+            "- Do not guess or argue over unverified premises. First retrieve the facts with tools, then deliver your analytical stance."
         )
 
         content, tool_calls = self._complete_with_tools(messages)
+
+        # Anti-duplication check: ensure the agent did not copy-paste or recycle its previous turn
+        if hasattr(self.memory, "history") and self.memory.history:
+            prev_response = self.memory.history[-1].get("response", "")
+            if prev_response and self._is_duplicate_response(content, prev_response):
+                retry_messages = list(messages)
+                retry_messages.append({"role": "assistant", "content": content})
+                retry_messages.append({
+                    "role": "user",
+                    "content": (
+                        "CRITICAL REJECTION: Your response was rejected because you recycled or copy-pasted "
+                        "text/paragraphs from your previous round turn. "
+                        "You MUST NOT repeat your previous text or reasoning. "
+                        "Deliver a completely fresh analysis or conclusive synthesis addressing the latest "
+                        "arguments and counter-arguments from other analysts."
+                    ),
+                })
+                try:
+                    retry_result = self.llm.generate(messages=retry_messages, tools=None)
+                    retry_content, retry_calls = self._parse_result(retry_result)
+                    if retry_calls or not retry_content.strip():
+                        raise RuntimeError("Invalid duplicate-response retry")
+                except Exception as error:
+                    raise AgentTurnError(error, tool_calls) from error
+                if retry_content.strip() and not self._is_duplicate_response(retry_content, prev_response):
+                    content = retry_content
+
         sources = self._sources_from_tool_calls(tool_calls)
         self.memory.add({"task": task, "response": content})
 
@@ -148,20 +181,71 @@ class Agent:
     def _sources_from_tool_calls(tool_calls: list[ToolCall]) -> list[RetrievedSource]:
         sources: list[RetrievedSource] = []
         for call in tool_calls:
-            if call.name != "knowledge_search" or not isinstance(call.result, list):
+            if call.status != "success":
                 continue
-            for item in call.result:
-                if not isinstance(item, dict) or "content" not in item:
-                    continue
-                sources.append(
-                    RetrievedSource(
+            if call.name == "knowledge_search" and isinstance(call.result, list):
+                for item in call.result:
+                    if not isinstance(item, dict) or "content" not in item:
+                        continue
+                    sources.append(RetrievedSource(
                         content=str(item["content"]),
                         source=str(item.get("source", "Unknown")),
                         score=item.get("score"),
                         metadata=dict(item.get("metadata") or {}),
-                    )
-                )
+                    ))
+            elif call.name == "web_search" and isinstance(call.result, str):
+                entries = call.result.split("\n---\n")
+                for entry in entries:
+                    lines = entry.strip().split("\n")
+                    title = ""
+                    url = ""
+                    content_lines = []
+                    for line in lines:
+                        if line.startswith("Title: "):
+                            title = line[len("Title: "):].strip()
+                        elif line.startswith("URL: "):
+                            url = line[len("URL: "):].strip()
+                        elif line.startswith("Content: "):
+                            content_lines.append(line[len("Content: "):].strip())
+                        else:
+                            content_lines.append(line)
+                    content_text = "\n".join(content_lines).strip()
+                    if url.startswith(("https://", "http://")) and (content_text or title):
+                        sources.append(
+                            RetrievedSource(
+                                content=content_text or title,
+                                source=url or title or "web_search",
+                                score=None,
+                                metadata={"title": title, "url": url},
+                            )
+                        )
         return sources
+
+    @staticmethod
+    def _is_duplicate_response(current: str, previous: str) -> bool:
+        """Detect if current response is an exact copy or substantial paragraph duplicate of previous turn."""
+        curr = current.strip()
+        prev = previous.strip()
+        if not curr or not prev:
+            return False
+        if curr == prev:
+            return True
+
+        curr_paras = [p.strip() for p in curr.split("\n\n") if len(p.strip()) > 60]
+        prev_paras = set(p.strip() for p in prev.split("\n\n") if len(p.strip()) > 60)
+
+        if not curr_paras or not prev_paras:
+            return False
+
+        # Exclude header/footer boilerplate lines
+        substantive_curr = [p for p in curr_paras if not p.startswith("SOURCES USED:") and not p.startswith("STANCE:")]
+        substantive_prev = {p for p in prev_paras if not p.startswith("SOURCES USED:") and not p.startswith("STANCE:")}
+
+        if not substantive_curr or not substantive_prev:
+            return False
+
+        matches = sum(1 for p in substantive_curr if p in substantive_prev)
+        return (matches / len(substantive_curr)) >= 0.5
 
     def _build_messages(
         self,
@@ -179,20 +263,68 @@ class Agent:
             f"Priorities: {', '.join(self.persona.priorities)}",
         ])
 
-        memory_context = str(memory) if memory else "No relevant previous memory."
         source_context = self._format_sources(sources)
+        available_tools = ", ".join(t.name for t in self.tools.get_tools()) if self.tools else "none"
+
+        # Include summary of older conversation if present
+        summary_context = ""
+        mem_str = str(memory).strip() if memory else ""
+        if mem_str and mem_str not in ("No relevant previous memory.", "No previous context."):
+            summary_context = f"\n\nEARLIER CONTEXT SUMMARY:\n{mem_str}\n"
+
         system_message = (
             "You are an AI agent operating according to this persona.\n\n"
-            f"PERSONA:\n{persona}\n\n"
-            f"MEMORY:\n{memory_context}\n\n"
+            f"PERSONA:\n{persona}"
+            f"{summary_context}\n"
             f"KNOWLEDGE:\n{source_context}\n\n"
+            f"AVAILABLE TOOLS: {available_tools}.\n"
+            "Only invoke tools from the AVAILABLE TOOLS list. Do not attempt to invoke unlisted tools.\n"
             "Use the retrieved knowledge to ground your response. "
             "Do not invent sources."
         )
-        return [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": task},
-        ]
+
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_message}]
+
+        # Add past conversation history as proper alternating user/assistant messages
+        if hasattr(self.memory, "get_messages") and callable(self.memory.get_messages):
+            messages.extend(self.memory.get_messages())
+        elif hasattr(self.memory, "history") and isinstance(self.memory.history, list):
+            for turn in self.memory.history:
+                if isinstance(turn, dict) and "response" in turn:
+                    t_lines = [l.strip() for l in turn.get("task", "").split("\n") if l.strip()]
+                    t_summary = t_lines[0] if t_lines else "Discussion turn"
+                    messages.append({"role": "user", "content": t_summary})
+                    messages.append({"role": "assistant", "content": turn["response"]})
+
+        messages.append({"role": "user", "content": task})
+        return messages
+
+    def _build_persona_query(self, task: str) -> str:
+        """Formulate a targeted retrieval query incorporating persona domain expertise."""
+        base_query = task
+        if "Discussion topic:" in task:
+            topic_line = task.split("Discussion topic:", 1)[1].split("\n", 1)[0].strip()
+            if topic_line:
+                base_query = topic_line
+
+        persona_name = getattr(self.persona, "name", "").lower()
+        expertise_text = " ".join(getattr(self.persona, "expertise", [])).lower()
+        combined = f"{persona_name} {expertise_text}"
+
+        if any(term in combined for term in ["var", "referee", "law 12", "officiating"]):
+            return f"{base_query} referee decisions VAR disallowed goal penalties fouls cards"
+        if any(term in combined for term in ["tactical", "pressing", "low block", "formation", "coach"]):
+            return f"{base_query} tactical formations pressing low block transition shape"
+        if any(term in combined for term in ["statistical", "data", "xg", "metrics"]):
+            return f"{base_query} Opta stats expected goals xG shots possession metrics"
+        if any(term in combined for term in ["fan", "supporter", "underdog", "pharaohs"]):
+            return f"{base_query} controversy disallowed goal referee decisions fan reaction"
+        if any(term in combined for term in ["performance", "athletic", "fatigue", "intensity"]):
+            return f"{base_query} player performance physical fatigue individual duels mental resilience"
+        if any(term in combined for term in ["context", "historical", "tournament", "history"]):
+            return f"{base_query} match report tournament context history records comeback"
+
+        return base_query
 
     @staticmethod
     def _format_sources(sources: list[RetrievedSource]) -> str:
@@ -238,7 +370,7 @@ class Agent:
             if not name:
                 raise ValueError("LLM returned a tool call without a name")
             calls.append(ToolCall(name=name, arguments=Agent._parse_arguments(arguments)))
-        return str(content), calls
+        return str(content) if content is not None else "", calls
 
     @staticmethod
     def _parse_arguments(arguments: object) -> dict:

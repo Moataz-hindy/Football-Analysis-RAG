@@ -200,3 +200,62 @@ def test_opinion_history_persists_and_reloads(tmp_path: Path, two_agent_state: D
     )
     assert reloaded_round1_stat.changed_from_previous is True
     assert reloaded_round1_stat.change_reason
+
+
+def test_stance_maintenance_phrasing_not_flagged_as_change():
+    """7. Natural language maintenance phrases (e.g. 'I maintain my position') are not flagged as changes."""
+    state = DiscussionState(
+        topic="Was officiating the decider?",
+        agent_ids=["fan_analyst", "tactical_analyst"],
+        total_rounds=3,
+    )
+    state.record_and_queue(_stance_message(
+        0, "fan_analyst", ["tactical_analyst"],
+        "The match official tilted the game against Egypt.",
+        "Crucial 50/50 calls favored the powerhouse.",
+    ))
+    state.advance_round()
+    state.record_and_queue(_stance_message(
+        1, "fan_analyst", ["tactical_analyst"],
+        "I maintain my position with absolute conviction. The corporate script ignores terrace realities.",
+        "Referees subconsciously protect giants.",
+    ))
+    state.advance_round()
+    state.record_and_queue(_stance_message(
+        2, "fan_analyst", ["tactical_analyst"],
+        "I maintain my position with even greater defiance. I reject this consensus entirely.",
+        "We fought 11 players and a biased whistle.",
+    ))
+
+    history = build_opinion_history(state)
+    fan_history = [o for o in history if o["agent_id"] == "fan_analyst"]
+    changes = [o["changed_from_previous"] for o in fan_history]
+    assert changes == [False, False, False]
+    for o in fan_history:
+        assert o["change_reason"] == ""
+
+
+def test_explicit_concession_flagged_as_change_even_with_framing():
+    """8. Concessions or explicit stance shifts are recognized as changes."""
+    state = DiscussionState(
+        topic="Was officiating the decider?",
+        agent_ids=["fan_analyst", "tactical_analyst"],
+        total_rounds=3,
+    )
+    state.record_and_queue(_stance_message(
+        0, "fan_analyst", ["tactical_analyst"],
+        "The referee was biased.",
+        "Every call favored Argentina.",
+    ))
+    state.advance_round()
+    state.record_and_queue(_stance_message(
+        1, "fan_analyst", ["tactical_analyst"],
+        "I now concede that tactical exhaustion in the 75th minute was the primary determinant.",
+        "The tactical data and replay evidence convince me that the referee was not to blame.",
+    ))
+
+    history = build_opinion_history(state)
+    fan_history = [o for o in history if o["agent_id"] == "fan_analyst"]
+    assert fan_history[0]["changed_from_previous"] is False
+    assert fan_history[1]["changed_from_previous"] is True
+    assert "tactical data" in fan_history[1]["change_reason"].lower()

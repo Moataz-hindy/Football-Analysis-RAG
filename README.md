@@ -1,5 +1,7 @@
 # ⚽ Football Analysis RAG — Week 1: Knowledge Infrastructure
 
+For this integration branch, see [mixed-work integration notes](docs/mixed_work_integration.md) for included changes, exclusions, and test results.
+
 A **Retrieval-Augmented Generation (RAG)** system that builds a searchable knowledge base of football (soccer) content — covering the **Laws of the Game**, **football analytics metrics**, **tactical concepts**, and **match analysis** — and retrieves the most relevant passages for any natural-language question using vector similarity search.
 
 This repository is the **Week 1 deliverable** for the Knowledge Infrastructure milestone.
@@ -271,7 +273,7 @@ Strips HTML tags, `<script>`, `<style>`, `<nav>`, `<footer>`, `<header>`, `<asid
 ### Step 3 — Chunk & embed
 
 ```bash
-python src/rag/process_all.py
+python -m src.rag.process_all
 ```
 
 Splits each cleaned document into overlapping chunks (1 200 chars, 200-char overlap) and calls the OpenRouter embedding API in batches of 50. Includes retry logic with exponential backoff for API rate limits. Already-embedded documents are skipped by default.
@@ -281,7 +283,7 @@ Splits each cleaned document into overlapping chunks (1 200 chars, 200-char over
 ### Step 4 — Ingest into PostgreSQL
 
 ```bash
-python src/rag/ingest.py
+python -m src.rag.ingest
 ```
 
 Loads all embedded chunks into the `football_chunks` table. Uses upsert (`ON CONFLICT ... DO UPDATE`) so it's safe to re-run. Validates that the embedding dimension matches the database column before inserting.
@@ -483,8 +485,8 @@ docker-compose up -d
 # 6. Run the data pipeline
 python src/ingestion/collect.py      # Step 1: Collect raw data (80+ pages)
 python src/ingestion/clean.py        # Step 2: Clean HTML → plain text
-python src/rag/process_all.py        # Step 3: Chunk & embed documents
-python src/rag/ingest.py             # Step 4: Load into PostgreSQL
+python -m src.rag.process_all        # Step 3: Chunk & embed documents
+python -m src.rag.ingest             # Step 4: Load into PostgreSQL
 
 # 7. Run retrieval
 python src/rag/search.py "What is expected goals (xG)?"
