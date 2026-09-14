@@ -127,6 +127,8 @@ class DiscussionOrchestrator:
                 content=response.content,
                 sources=response.sources,
                 tool_calls=response.tool_calls,
+                sentiment_score=response.sentiment_score,
+                sentiment_label=response.sentiment_label,
             )
 
             state.record_and_queue(message)
@@ -189,6 +191,8 @@ class DiscussionOrchestrator:
                     content=response.content,
                     sources=response.sources,
                     tool_calls=response.tool_calls,
+                    sentiment_score=response.sentiment_score,
+                    sentiment_label=response.sentiment_label,
                 )
 
                 state.record_and_queue(message)
