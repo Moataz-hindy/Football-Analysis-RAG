@@ -45,6 +45,36 @@ def to_tool_schema(tool: ToolInterface) -> dict[str, Any]:
     }
 
 
+def _sanitize_messages_without_tools(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert tool-augmented message history into clean conversational turns.
+
+    Used when a provider rejects tool calling or when falling back from a tool error,
+    so that providers (Gemini, Groq, Ollama, etc.) do not 400 on unexpected 'tool' roles
+    without active tool definitions.
+    """
+    sanitized: list[dict[str, Any]] = []
+    for m in messages:
+        role = m.get("role")
+        if role == "tool":
+            tool_name = m.get("name") or "search"
+            content = m.get("content", "")
+            sanitized.append({
+                "role": "user",
+                "content": f"[Retrieved Information from {tool_name}]:\n{content}",
+            })
+        elif role == "assistant":
+            content = m.get("content")
+            if not content:
+                content = "I reviewed the available match evidence."
+            sanitized.append({
+                "role": "assistant",
+                "content": content,
+            })
+        else:
+            sanitized.append(dict(m))
+    return sanitized
+
+
 class OpenAICompatibleLLM(LLMInterface):
     """Chat-completions LLM backed by any OpenAI-compatible endpoint."""
 
@@ -157,9 +187,11 @@ class OpenAICompatibleLLM(LLMInterface):
             if tools and ("tool" in err_str or "400" in err_str):
                 kwargs.pop("tools", None)
                 kwargs.pop("tool_choice", None)
+                kwargs["messages"] = _sanitize_messages_without_tools(kwargs["messages"])
                 try:
                     response = self._client.chat.completions.create(**kwargs)
-                except Exception:
+                except Exception as fallback_err:
+                    logger.warning("Fallback without tools failed: %s", fallback_err)
                     return {
                         "content": (
                             "STANCE: Insufficient evidence available.\n"
@@ -169,32 +201,41 @@ class OpenAICompatibleLLM(LLMInterface):
                         "tool_calls": [],
                     }
             elif "tool" in err_str or "400" in err_str:
-                return {
-                    "content": (
-                        "STANCE: Insufficient evidence to support a definitive conclusion.\n"
-                        "REASONING: Detailed match metrics were not available to ground the position.\n"
-                        "SOURCES USED: None."
-                    ),
-                    "tool_calls": [],
-                }
-            elif "429" in err_str or "rate_limit" in err_str:
-                import time
-                logger.warning("LLM rate limit encountered; waiting 5 seconds before retrying without tools...")
-                time.sleep(5)
-                kwargs.pop("tools", None)
-                kwargs.pop("tool_choice", None)
+                kwargs["messages"] = _sanitize_messages_without_tools(kwargs["messages"])
                 try:
                     response = self._client.chat.completions.create(**kwargs)
-                except Exception as retry_err:
-                    logger.warning("Retry after rate limit failed: %s. Returning structured fallback.", retry_err)
+                except Exception:
                     return {
                         "content": (
-                            "STANCE: Maintains tactical position pending further match evidence.\n"
-                            "REASONING: Provider request limits constrained retrieval during this turn; maintaining position based on established analysis.\n"
+                            "STANCE: Insufficient evidence to support a definitive conclusion.\n"
+                            "REASONING: Detailed match metrics were not available to ground the position.\n"
                             "SOURCES USED: None."
                         ),
                         "tool_calls": [],
                     }
+            elif "429" in err_str or "rate_limit" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
+                import time
+                logger.warning("LLM rate limit encountered; waiting 5 seconds before retrying...")
+                time.sleep(5)
+                try:
+                    response = self._client.chat.completions.create(**kwargs)
+                except Exception as retry_err:
+                    logger.warning("Retry with tools failed: %s; retrying without tools...", retry_err)
+                    kwargs.pop("tools", None)
+                    kwargs.pop("tool_choice", None)
+                    kwargs["messages"] = _sanitize_messages_without_tools(kwargs["messages"])
+                    try:
+                        response = self._client.chat.completions.create(**kwargs)
+                    except Exception as second_retry_err:
+                        logger.warning("Final retry failed: %s. Returning structured fallback.", second_retry_err)
+                        return {
+                            "content": (
+                                "STANCE: Maintains tactical position pending further match evidence.\n"
+                                "REASONING: Provider request limits constrained retrieval during this turn; maintaining position based on established analysis.\n"
+                                "SOURCES USED: None."
+                            ),
+                            "tool_calls": [],
+                        }
             else:
                 raise
         self.last_response = response
@@ -238,27 +279,38 @@ class OpenAICompatibleLLM(LLMInterface):
                 continue
 
             calls = rounds.pop(0)
+            repaired_calls: list[dict[str, Any]] = []
+            for call in calls:
+                call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else "")
+                func = getattr(call, "function", None) or (call.get("function") if isinstance(call, dict) else None)
+                fname = getattr(func, "name", None) or (func.get("name") if isinstance(func, dict) else "")
+                fargs = getattr(func, "arguments", None) or (func.get("arguments") if isinstance(func, dict) else "")
+                c_dict: dict[str, Any] = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": fname,
+                        "arguments": fargs,
+                    },
+                }
+                # Preserve provider-specific extra content (such as Google Gemini thought_signature)
+                extra = getattr(call, "extra_content", None) or (call.get("extra_content") if isinstance(call, dict) else None)
+                if extra:
+                    c_dict["extra_content"] = extra
+                repaired_calls.append(c_dict)
+
             repaired.append({
                 "role": "assistant",
                 "content": message.get("content") or None,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.function.name,
-                            "arguments": call.function.arguments,
-                        },
-                    }
-                    for call in calls
-                ],
+                "tool_calls": repaired_calls,
             })
             index += 1
             for call in calls:
+                call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else "")
                 if index < len(messages) and messages[index].get("role") == "tool":
                     repaired.append({
                         "role": "tool",
-                        "tool_call_id": call.id,
+                        "tool_call_id": call_id,
                         "content": messages[index].get("content", ""),
                     })
                     index += 1

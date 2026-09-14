@@ -324,9 +324,59 @@ def _extract_opinion(content: str) -> dict[str, str]:
     }
 
 
+# Patterns indicating the agent explicitly maintained or reaffirmed their stance
+_MAINTAIN_PATTERNS = [
+    r"^maintain\b",
+    r"^(?:i\s+)?maintain(?:s|ed|ing)?\b",
+    r"^(?:i\s+)?stand(?:s|ing)?\s+by\b",
+    r"^(?:i\s+)?hold(?:s|ing)?\s+(?:firm|to\s+my|my|the)?\s*(?:position|stance|view)",
+    r"^(?:my|the)\s+(?:position|stance|view|assessment)\s+remains?\s+(?:unchanged|the\s+same|firm|constant)",
+    r"^(?:my|the)\s+(?:position|stance|view|assessment)\s+has\s+not\s+changed",
+    r"^no\s+change\s+(?:in|to)?\s*(?:my|the)?\s*(?:position|stance|view)",
+    r"^(?:i\s+)?(?:reaffirm|reiterate|reassert)(?:s|ed|ing)?\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"^(?:i\s+)?continue(?:s|d|ing)?\s+to\s+(?:hold|maintain|believe|argue|view)",
+    r"^unchanged\b",
+    r"^(?:i\s+)?reject(?:s|ed|ing)?\s+(?:this|the)?\s*(?:consensus|narrative|premise|notion)",
+]
+
+# Patterns where an agent explicitly introduces a shift or concession
+_SHIFT_PATTERNS = [
+    r"\b(?:concede|conceded|conceding)\b",
+    r"\b(?:shift|shifted|shifting)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:change|changed|changing)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:now\s+agree|now\s+accept|now\s+conclude|now\s+believe)\b",
+    r"\b(?:revise|revised|revising)\s+(?:my|the)?\s*(?:position|stance|view)",
+]
+
+
 def _stance_changed(previous_stance: str, current_stance: str) -> bool:
-    """Whitespace/case-insensitive comparison used to detect an opinion change."""
-    return previous_stance.strip().lower() != current_stance.strip().lower()
+    """Detect whether an agent's stance genuinely changed between rounds.
+
+    Evaluates:
+    1. Literal equality: Identical or case/whitespace-equivalent stances are unchanged.
+    2. Stance maintenance markers: Phrases like 'I maintain my position',
+       'I hold firm', or 'My stance remains unchanged' signify persistence.
+    3. Stance concession/shift markers: Concession phrases ('I now concede',
+       'I shift my view') indicate genuine evolution even if prefaced with maintenance.
+    4. Lexical difference: If stances differ and no maintenance phrasing is present,
+       it is treated as an evolved position.
+    """
+    prev = previous_stance.strip().lower()
+    curr = current_stance.strip().lower()
+
+    if prev == curr:
+        return False
+
+    is_maintaining = any(re.search(pat, curr) for pat in _MAINTAIN_PATTERNS)
+    has_shift = any(re.search(pat, curr) for pat in _SHIFT_PATTERNS)
+
+    if is_maintaining and not has_shift:
+        return False
+
+    if has_shift:
+        return True
+
+    return prev != curr
 
 
 def _derive_change_reason(reasoning: str) -> str:
@@ -340,8 +390,10 @@ def _derive_change_reason(reasoning: str) -> str:
     if not reasoning:
         return ""
 
-    first_sentence = re.split(r"(?<=[.!?])\s+", reasoning)[0].strip()
-    return first_sentence
+    # Strip leading markdown list markers like "1. ", "- ", "* "
+    cleaned = re.sub(r"^(?:\d+\.|\*|-)\s*", "", reasoning).strip()
+    first_sentence = re.split(r"(?<=[.!?])\s+", cleaned)[0].strip()
+    return first_sentence or cleaned[:120]
 
 
 def build_opinion_history(state: Any) -> list[dict[str, Any]]:

@@ -107,7 +107,11 @@ class DiscussionOrchestrator:
                 f"Discussion topic: {state.topic}\n\n"
                 "Give your initial opinion from your persona's perspective.\n"
                 "State a clear, assertive stance and provide evidence-based reasoning.\n"
-                "Use this format:\n"
+                "CRITICAL: Base your position strictly on concrete match facts, rules, and tactical realities. "
+                "Do NOT invent fictional match timelines, scores, or referee calls. "
+                "Do NOT confabulate tracking metrics, exact distance measurements (e.g. meter gaps), or unverified statistics. "
+                "Use the `web_search` or `knowledge_search` tool if you need to verify specific match details.\n"
+                "Provide your response in this format:\n"
                 "STANCE: Your position on the topic.\n"
                 "REASONING: Explain your position using available evidence and match insights.\n"
                 "SOURCES USED: Identify the sources you relied on."
@@ -165,24 +169,39 @@ class DiscussionOrchestrator:
                 ]
 
                 is_final_round = (state.current_round == state.total_rounds)
-                final_round_instruction = (
-                    "This is the FINAL round of the studio debate. Deliver your definitive verdict. "
-                    "Review all points raised: if another analyst presented convincing evidence, adapt your position toward a consensus; "
-                    "otherwise, firmly defend your core divergence."
-                    if is_final_round
-                    else (
-                        "Directly address the arguments you received from other analysts by name. "
-                        "Challenge claims that contradict your perspective, point out flaws or agree with strong points, "
-                        "and explain whether you maintain, adapt, or revise your position."
+                if is_final_round:
+                    round_instruction = (
+                        "This is the FINAL round of the studio debate. Deliver your definitive, conclusive closing verdict.\n"
+                        "- Provide a fresh, comprehensive synthesis summarizing the core conflict of the debate and your final judgment.\n"
+                        "- Address unresolved points of friction directly (e.g. the procedural validity of the VAR review vs. the perception of momentum disruption).\n"
+                        "- CRITICAL ANTI-REPETITION MANDATE: Do NOT copy, re-emit, or recycle paragraphs or phrases from your earlier turns. Any recycled text will be automatically rejected. Deliver a completely fresh conclusive closing argument.\n"
+                        "- CRITICAL ANTI-HALLUCINATION & METRIC GROUNDING: Base your conclusive synthesis strictly on verified match facts and reports.\n"
+                        "- CRITICAL: Avoid sycophancy, cheerleading, and filler praise ('It is refreshing to see consensus', 'I agree with my esteemed colleagues'). Focus 100% on analytical substance."
                     )
-                )
+                else:
+                    round_instruction = (
+                        "Directly cross-examine the arguments you received from other analysts by name.\n"
+                        "- ACTIVE FACT-CHECKING & SEARCH: If an analyst raises claims about referee bias, controversial decisions, "
+                        "disallowed goals, VAR reviews, or disputed match statistics, invoke `web_search` or `knowledge_search` to look up verified reporting before answering.\n"
+                        "- If an analyst presented concrete match facts or data (e.g. scorelines, penalties, match timeline), "
+                        "you MUST directly address and reconcile those facts with your thesis.\n"
+                        "- If an opposing analyst's premise contradicts established match events, directly challenge their contradiction with retrieved evidence.\n"
+                        "- CRITICAL ANTI-HALLUCINATION & METRIC GROUNDING: Do NOT invent, confabulate, or extrapolate ungrounded numerical metrics, spatial measurements (e.g. '4.2 meters between lines', exact physical distances), or pseudo-statistical formulas not in your sources. "
+                        "If a colleague introduces an ungrounded metric or numerical claim lacking source attribution, do NOT adopt it as fact or treat it as a 'smoking gun'; challenge its empirical validity and source.\n"
+                        "- CRITICAL: Do NOT use conversational filler, pleasantries, or mutual congratulations "
+                        "('I agree with my esteemed colleague', 'It is refreshing to see such a consensus'). "
+                        "Jump immediately into substantive critique and evidence.\n"
+                        "- CRITICAL: Do NOT repeat paragraphs from your previous turns or recycle boilerplate text. "
+                        "Advance a new, deeper argument or interrogate a specific counter-point in every round.\n"
+                        "- Explain clearly whether you maintain, adapt, or revise your position."
+                    )
 
                 task = (
                     f"Discussion topic: {state.topic}\n"
                     f"Round: {state.current_round} of {state.total_rounds}\n\n"
-                    f"{final_round_instruction}\n"
-                    "Use available knowledge and tools when useful. Do not invent sources.\n"
-                    "Use this format:\n"
+                    f"{round_instruction}\n\n"
+                    "If you need to verify claims, call `web_search` or `knowledge_search` first. "
+                    "When ready, provide your response in this format:\n"
                     "STANCE: Your current position (clearly state if you maintain, adapt, or shift).\n"
                     "REASONING: Address the specific received arguments and evidence from other analysts.\n"
                     "SOURCES USED: Identify the sources you relied on."

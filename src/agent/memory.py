@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from .interfaces import MemoryInterface
 
@@ -75,9 +76,16 @@ class ConversationMemory(MemoryInterface):
         suitable for direct inclusion in chat completion payloads.
         """
         messages = []
-        for turn in self.history:
-            task_lines = [line.strip() for line in turn.get("task", "").split("\n") if line.strip()]
-            task_summary = task_lines[0] if task_lines else "Discussion turn"
+        for index, turn in enumerate(self.history):
+            raw_task = turn.get("task", "")
+            round_match = re.search(r"Round:\s*(\d+)\s*of\s*(\d+)", raw_task)
+            if round_match:
+                task_summary = f"Discussion Turn (Round {round_match.group(1)} of {round_match.group(2)})"
+            elif "initial opinion" in raw_task.lower():
+                task_summary = "Discussion Turn (Round 0: Initial Opinion)"
+            else:
+                task_lines = [line.strip() for line in raw_task.split("\n") if line.strip()]
+                task_summary = task_lines[0] if task_lines else f"Discussion Turn {index + 1}"
             messages.append({"role": "user", "content": task_summary})
             messages.append({"role": "assistant", "content": turn.get("response", "")})
         return messages

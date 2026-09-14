@@ -18,7 +18,7 @@ class RAGRetrieval(RetrievalInterface):
     Integrates with the Week 1 pgvector knowledge retrieval system.
     """
 
-    def __init__(self, k: int = 3):
+    def __init__(self, k: int = 6):
         self.k = k
 
     def retrieve(self, query: str) -> list[RetrievedSource]:
