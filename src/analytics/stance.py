@@ -194,14 +194,102 @@ Snapshots to evaluate:
         return {}
 
 
+_EMBEDDING_MODEL = None
+
+
+def get_embedding_model():
+    """Lazily load and cache local sentence-transformers embedding model."""
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None:
+        try:
+            import os
+            os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+            from sentence_transformers import SentenceTransformer
+            _EMBEDDING_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception as e:
+            logger.debug("SentenceTransformer unavailable (%s); using rule fallback.", e)
+            _EMBEDDING_MODEL = False
+    return _EMBEDDING_MODEL if _EMBEDDING_MODEL is not False else None
+
+
+def extract_topic_poles(topic: str) -> tuple[str, str]:
+    """Extract clean Pole A (affirmative) and Pole B (opposing) statements from debate topic."""
+    parts = re.split(r'\b,\s*or\s+|\b\s+or\s+|\bversus\b|\bvs\.?\b', topic, flags=re.IGNORECASE)
+    if len(parts) >= 2:
+        part_a = parts[0].strip()
+        part_b = parts[1].strip()
+        part_a = re.sub(r'^(?:in\s+[^,]+,\s*)?(?:did\s+|was\s+|is\s+|does\s+)', '', part_a, flags=re.IGNORECASE)
+        part_b = re.sub(r'^(?:was\s+|did\s+|is\s+|were\s+)', '', part_b, flags=re.IGNORECASE)
+        part_b = re.sub(r'\?+$', '', part_b).strip()
+        pole_a = f"Affirms that {part_a}"
+        pole_b = f"Affirms that {part_b}"
+    else:
+        clean_top = re.sub(r'\?+$', '', topic).strip()
+        pole_a = f"Yes, confirms that {clean_top}"
+        pole_b = f"No, rejects that {clean_top}"
+    return pole_a, pole_b
+
+
+def score_snapshot_with_embeddings(
+    snapshot: OpinionSnapshot | dict[str, Any],
+    topic: str,
+    prev_stance: float | None = None,
+    model: Any = None,
+) -> float | None:
+    """Compute continuous stance [-1.0, 1.0] using semantic embedding projection onto topic poles."""
+    try:
+        import numpy as np
+        model = model or get_embedding_model()
+        if model is None:
+            return None
+
+        if isinstance(snapshot, OpinionSnapshot):
+            st_text = snapshot.stance.strip()
+            reas_text = snapshot.reasoning.strip()
+            changed = snapshot.changed_from_previous
+        elif isinstance(snapshot, dict):
+            st_text = str(snapshot.get("stance", "")).strip()
+            reas_text = str(snapshot.get("reasoning", "")).strip()
+            changed = bool(snapshot.get("changed_from_previous", False))
+        else:
+            return None
+
+        st_lower = st_text.lower()
+        if prev_stance is not None and not changed and "maintain" in st_lower and "concede" not in st_lower and "acknowledg" not in st_lower:
+            return round(prev_stance, 2)
+
+        pole_a, pole_b = extract_topic_poles(topic)
+        full_text = f"{st_text}. {reas_text[:250]}"
+
+        # Encode normalized vectors
+        vectors = model.encode([full_text, pole_a, pole_b], normalize_embeddings=True)
+        v_agent, v_a, v_b = vectors[0], vectors[1], vectors[2]
+
+        sim_a = float(np.dot(v_agent, v_a))
+        sim_b = float(np.dot(v_agent, v_b))
+
+        raw_diff = sim_a - sim_b
+        raw_stance = float(np.clip(raw_diff * 5.0, -1.0, 1.0))
+
+        if prev_stance is not None and any(w in st_lower for w in ["concede", "adapt", "acknowledg", "shift"]):
+            blended = prev_stance * 0.5 + raw_stance * 0.5
+            return round(float(np.clip(blended, -1.0, 1.0)), 2)
+
+        return round(raw_stance, 2)
+    except Exception as exc:
+        logger.debug("Embedding stance scoring failed (%s); falling back to rule engine.", exc)
+        return None
+
+
 def extract_numeric_stance(
     snapshot: OpinionSnapshot | dict[str, Any],
     prev_stance: float | None = None,
     topic: str | None = None,
+    use_embeddings: bool = True,
 ) -> float:
     """
     Evaluate an agent's OpinionSnapshot into a continuous numeric stance in [-1.0, 1.0].
-    Universal across any topic via semantic polarity and persistence anchoring.
+    Universal across any topic via hybrid semantic polarity and vector embedding projection.
 
     Scale:
     - +1.0: Full affirmative support / agreement with the debate proposition.
@@ -221,16 +309,22 @@ def extract_numeric_stance(
 
     st_lower = stance_text.strip().lower()
 
-    # Persistence anchor: If the agent did not change stance, maintain core polarity
+    # Persistence anchor: If the agent did not change stance, lock position
     if prev_stance is not None and not changed:
-        if any(term in st_lower for term in ["maintain", "hold firm", "stand by", "remain unchanged"]):
-            raw_val = _score_raw_text(st_lower)
-            if (raw_val > 0 and prev_stance > 0) or (raw_val < 0 and prev_stance < 0):
-                blended = prev_stance * 0.85 + raw_val * 0.15
-                return round(max(-1.0, min(1.0, blended)), 2)
-            return round(prev_stance, 2)
+        return round(prev_stance, 2)
 
-    return _score_raw_text(st_lower, reasoning_text)
+    # 1. First check explicit discourse / polarity keywords
+    rule_score = _score_raw_text(st_lower, reasoning_text)
+    if abs(rule_score) >= 0.50:
+        return rule_score
+
+    # 2. If rule score is neutral/unresolved and topic has a dichotomy (' or ', ' vs '), use semantic embeddings
+    if topic and use_embeddings and any(sep in topic.lower() for sep in [" or ", " vs ", "versus", ", or"]):
+        emb_score = score_snapshot_with_embeddings(snapshot, topic=topic, prev_stance=prev_stance)
+        if emb_score is not None and abs(emb_score) > abs(rule_score):
+            return emb_score
+
+    return rule_score
 
 
 def _score_raw_text(st_lower: str, reasoning_text: str = "") -> float:

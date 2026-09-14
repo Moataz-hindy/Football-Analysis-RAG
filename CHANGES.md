@@ -29,6 +29,7 @@ However, running the discussion immediately crashed due to a cascade of blocking
   2. `Agent._sources_from_tool_calls` now skips tool error strings, preventing error messages from polluting `sources_used`.
   3. `persistence.py` now accurately counts web search results (`num_results`) for string responses rather than recording `0`.
   4. `OpenAICompatibleLLM` now automatically catches `503`, `UNAVAILABLE`, and server capacity limits with backoff retry, protecting against transient provider overloads.
+  5. **Hybrid Semantic Embedding Stance Engine**: Upgraded offline stance extraction with SentenceTransformer (`all-MiniLM-L6-v2`) vector projection against dynamic topic poles, eliminating reliance on static keywords and enabling rich offline analysis across any debate topic without an LLM.
 
 ---
 
