@@ -1,5 +1,7 @@
 # ⚽ Football Analysis RAG — Week 1: Knowledge Infrastructure
 
+New: [sentiment and experimental analytics](docs/sentiment_and_analytics.md), including local-only defaults and testing instructions.
+
 For this integration branch, see [mixed-work integration notes](docs/mixed_work_integration.md) for included changes, exclusions, and test results.
 
 A **Retrieval-Augmented Generation (RAG)** system that builds a searchable knowledge base of football (soccer) content — covering the **Laws of the Game**, **football analytics metrics**, **tactical concepts**, and **match analysis** — and retrieves the most relevant passages for any natural-language question using vector similarity search.

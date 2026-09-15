@@ -593,8 +593,11 @@ def save_discussion_from_state(
                 continue
             args = event.get("arguments", {})
             result = event.get("result")
+            query = args.get("query") or args.get("queries") or args.get("search_query") or args.get("q") or ""
+            if isinstance(query, list):
+                query = " ".join(item.strip() for item in query if isinstance(item, str) and item.strip())
             retrieval_events.append({
-                "query": args.get("query", ""),
+                "query": str(query),
                 "num_results": len(result) if isinstance(result, list) else 0,
                 "timestamp": event.get("timestamp") or getattr(msg, "timestamp", ""),
                 "metadata": {
@@ -610,6 +613,8 @@ def save_discussion_from_state(
             "sender_id": msg.sender_id,
             "recipient_ids": list(msg.recipient_ids),
             "content": msg.content,
+            "sentiment_score": getattr(msg, "sentiment_score", None),
+            "sentiment_label": getattr(msg, "sentiment_label", None),
             "timestamp": getattr(msg, "timestamp", ""),
             "sources_used": sources_used,
             "retrieval_events": retrieval_events,

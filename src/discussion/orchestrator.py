@@ -143,6 +143,8 @@ class DiscussionOrchestrator:
                 content=response.content,
                 sources=response.sources,
                 tool_calls=response.tool_calls,
+                sentiment_score=getattr(response, "sentiment_score", None),
+                sentiment_label=getattr(response, "sentiment_label", None),
             )
 
             state.record_and_queue(message)
@@ -214,6 +216,8 @@ class DiscussionOrchestrator:
                     f"Discussion topic: {state.topic}\n"
                     f"Round: {state.current_round} of {state.total_rounds}\n\n"
                     f"{round_instruction}\n\n"
+                    "Acknowledge verified peer evidence that changes your reasoning, and explain any concession. "
+                    "Do not change your view merely to produce apparent agreement.\n"
                     "If you need to verify claims, call `web_search` or `knowledge_search` first. "
                     "When ready, provide your response in this format:\n"
                     "STANCE: Your current position (clearly state if you maintain, adapt, or shift).\n"
@@ -236,6 +240,8 @@ class DiscussionOrchestrator:
                     content=response.content,
                     sources=response.sources,
                     tool_calls=response.tool_calls,
+                    sentiment_score=getattr(response, "sentiment_score", None),
+                    sentiment_label=getattr(response, "sentiment_label", None),
                 )
 
                 state.record_and_queue(message)

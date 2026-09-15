@@ -96,6 +96,8 @@ class DiscussionMessage:
     sources_used: list[RetrievedSource] = field(default_factory=list)
     retrieval_events: list[RetrievalEvent] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         serialized_sources = []
@@ -128,6 +130,8 @@ class DiscussionMessage:
             "sender_id": self.sender_id,
             "recipient_ids": list(self.recipient_ids),
             "content": self.content,
+            "sentiment_score": self.sentiment_score,
+            "sentiment_label": self.sentiment_label,
             "timestamp": self.timestamp,
             "sources_used": serialized_sources,
             "retrieval_events": serialized_retrievals,
@@ -162,6 +166,8 @@ class DiscussionMessage:
             sender_id=data.get("sender_id", ""),
             recipient_ids=data.get("recipient_ids", []),
             content=data.get("content", ""),
+            sentiment_score=data.get("sentiment_score"),
+            sentiment_label=data.get("sentiment_label"),
             timestamp=data.get("timestamp", ""),
             sources_used=sources,
             retrieval_events=retrievals,

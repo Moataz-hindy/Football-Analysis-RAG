@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         save_discussion_from_state(
             state=state, router=router, output_dir=args.output_dir, llm=llm,
             config_metadata={"persona_files": persona_files,
-                             "retrieval": "week1_pgvector_k3", "status": "running"},
+                             "retrieval": "week1_pgvector_k6", "status": "running"},
             duration_seconds=time.monotonic() - started,
         )
 
@@ -167,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
             llm=llm,
             config_metadata={
                 "persona_files": persona_files,
-                "retrieval": "week1_pgvector_k3",
+                "retrieval": "week1_pgvector_k6",
                 "status": "interrupted" if isinstance(error.__cause__, KeyboardInterrupt) else "failed_partial",
             },
             duration_seconds=time.monotonic() - started,
@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         llm=llm,
         config_metadata={
             "persona_files": persona_files,
-            "retrieval": "week1_pgvector_k3",
+            "retrieval": "week1_pgvector_k6",
             "status": "completed",
         },
         duration_seconds=elapsed,

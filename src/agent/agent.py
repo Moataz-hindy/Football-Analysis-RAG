@@ -1,6 +1,7 @@
 from dataclasses import asdict
 
 from .config import AgentConfig
+from .sentiment import score_sentiment
 from .types import AgentResponse, RetrievedSource, ToolCall
 
 
@@ -49,8 +50,10 @@ class Agent:
 
         messages = self._build_messages(task=task, memory=memory, sources=sources)
         content, tool_calls = self._complete_with_tools(messages, tool_calls)
+        sentiment_score, sentiment_label = score_sentiment(content)
         self.memory.add({"task": task, "response": content})
         return AgentResponse(content=content,
+                             sentiment_score=sentiment_score, sentiment_label=sentiment_label,
                              sources=self._sources_from_tool_calls(tool_calls),
                              tool_calls=tool_calls)
 
@@ -127,6 +130,7 @@ class Agent:
                     content = retry_content
 
         sources = self._sources_from_tool_calls(tool_calls)
+        sentiment_score, sentiment_label = score_sentiment(content)
         self.memory.add({"task": task, "response": content})
 
         return AgentResponse(
@@ -134,6 +138,7 @@ class Agent:
             sources=sources,
             tool_calls=tool_calls,
             metadata={"received_messages": received_messages or []},
+            sentiment_score=sentiment_score, sentiment_label=sentiment_label,
         )
 
     def _complete_with_tools(

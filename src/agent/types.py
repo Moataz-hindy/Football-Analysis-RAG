@@ -44,3 +44,5 @@ class AgentResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
 
     metadata: dict[str, Any] = field(default_factory=dict)
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None
