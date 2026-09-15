@@ -6,3 +6,5 @@ pgvector
 openai
 pyyaml
 networkx
+pytest
+vaderSentiment

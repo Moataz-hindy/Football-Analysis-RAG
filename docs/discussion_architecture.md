@@ -78,6 +78,20 @@ outputs/
       "sources_used": "",
       "raw_text": "Initial opinion text...",
       "timestamp": "2026-09-07T14:00:05Z",
+      "changed_from_previous": false,
+      "change_reason": "",
+      "metadata": {}
+    },
+    {
+      "agent_id": "Tactical Analyst",
+      "round_num": 1,
+      "stance": "Confident the low block was net-positive.",
+      "reasoning": "Transition moments punished Spain's high line, changing my assessment.",
+      "sources_used": "",
+      "raw_text": "Round 1 updated analysis...",
+      "timestamp": "2026-09-07T14:02:10Z",
+      "changed_from_previous": true,
+      "change_reason": "Transition moments punished Spain's high line, changing my assessment.",
       "metadata": {}
     }
   ],
@@ -92,6 +106,24 @@ outputs/
 ```
 
 ---
+
+### 1.2.1 Opinion Evolution (Section 4.7)
+
+`opinions[]` doubles as the agent's opinion-evolution history: for a given
+`agent_id`, sorting its snapshots by `round_num` gives the initial opinion
+(`round_num == 0`), the opinion recorded after every subsequent discussion
+round, and the final opinion (the highest `round_num`). Two extra fields
+on `OpinionSnapshot` track change over time:
+
+- `changed_from_previous` (bool): whether the parsed `stance` differs from
+  that same agent's immediately preceding snapshot (case/whitespace
+  insensitive comparison). Always `false` for `round_num == 0`.
+- `change_reason` (str): when a change is detected, a short excerpt taken
+  from the agent's own `REASONING` for that round; otherwise `""`.
+
+This is built by `build_opinion_history(state)` in `persistence.py`, which
+walks `state.messages` per agent in round order — so it works for any
+configured `total_rounds`, not just a fixed count.
 
 ### 1.3 Module APIs (`src.discussion.persistence`)
 
@@ -143,3 +175,62 @@ All persistence operations log through Python's standard `logging` library using
 - **INFO**: Successful save operations (with file size, agent count, message count), successful loads (with topic and round count), and discovery counts during listing.
 - **WARNING**: Corrupted JSON files skipped during `list_discussions()`, missing non-critical metadata fields during reconstruction.
 - **ERROR**: File write failures, permission issues, JSON syntax errors, and schema validation failures with full exception traceback.
+
+## 2. Run Identity & Reproducibility (Section 4.8, 23)
+
+### 2.1 Run identity
+
+Every discussion run carries a `discussion_id`. By default the
+orchestrator generates a UUID4, so two runs of the same topic never
+collide. A caller can pin a deterministic name:
+
+```python
+state = orchestrator.run(topic="...", total_rounds=3, discussion_id="2026-09-09_japan-low-block")
+```
+
+Because `save_discussion` names the record `{discussion_id}.json`, the
+identifier alone retrieves the complete history:
+
+```python
+from src.discussion import load_discussion_by_id
+result = load_discussion_by_id("2026-09-09_japan-low-block")
+```
+
+### 2.2 Captured run configuration
+
+The persisted `config` block records everything needed to trace a run
+(Requirement 4.8 / 23):
+
+| Field | Source of truth |
+|---|---|
+| `discussion_id` | Orchestrator (or caller-supplied) |
+| `topic`, `num_rounds`, `agent_ids` | `DiscussionState` |
+| `graph` | Adjacency list serialized from the `GraphRouter` |
+| `llm_model`, `llm_temperature` | The LLM adapter itself (`OpenAICompatibleLLM.model` / `.temperature`), captured automatically by `save_discussion_from_state(..., llm=llm)`. Hand-passed values keep priority and act as an override. |
+| `metadata.llm_base_url`, `metadata.llm_max_tokens` | LLM adapter |
+| `metadata.llm_seed` | `LLM_SEED` environment variable, recorded when set |
+| `metadata.persona_files`, `metadata.retrieval`, `metadata.status` | Supplied by the runner (`src/discussion/run_discussion.py`) |
+
+### 2.3 Nondeterminism
+
+Exact reproduction of LLM output is not guaranteed: providers sample
+stochastically, free tiers throttle, and tool traces may vary. The system
+makes the run **traceable** instead:
+
+* Set `LLM_TEMPERATURE=0` in `.env` for the most stable behavior.
+* Optionally set `LLM_SEED`; it is recorded in the config metadata.
+* Every message carries `timestamp` and `message_id`; recipients come
+  from the persisted graph, so routing and ordering are reconstructable.
+
+### 2.4 Reproducible demonstration
+
+```bash
+python -m src.discussion.run_discussion                       # default topic, 3 rounds
+python -m src.discussion.run_discussion --discussion-id demo_run_1
+```
+
+The script builds the six persona agents, runs the discussion with Week 1
+retrieval enabled, saves `outputs/{discussion_id}.json`, then reloads the
+record by ID and prints a verification summary (participants, rounds,
+messages, retrieval events, opinion changes). See README "Reproducible
+discussion runs" for the full reviewer workflow.

@@ -23,6 +23,9 @@ class DiscussionMessage:
     sources: list[RetrievedSource] = field(default_factory=list)
     tool_calls: list[ToolCall] = field(default_factory=list)
 
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None
+
 @dataclass
 class DiscussionState:
     """The discussion history and messages available in each round."""

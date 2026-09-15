@@ -75,6 +75,25 @@ class OpenAICompatibleLLM(LLMInterface):
         )
         self.last_response: Any = None       # usage / finish_reason, for debugging
         self._emitted: list[list[Any]] = []  # tool calls per round, for message repair
+    @property
+    def model(self) -> str:
+        """Model identifier sent with every request (Requirement 4.8)."""
+        return self._model
+
+    @property
+    def temperature(self) -> float:
+        """Sampling temperature sent with every request (Requirement 4.8)."""
+        return self._temperature
+
+    @property
+    def base_url(self) -> str:
+        """Provider endpoint the client was configured with."""
+        return str(self._client.base_url)
+
+    @property
+    def max_tokens(self) -> int:
+        """Per-request output-token cap."""
+        return self._max_tokens
 
     def generate(
         self,

@@ -1,4 +1,5 @@
 from .config import AgentConfig
+from .sentiment import score_sentiment
 from .types import AgentResponse, RetrievedSource, ToolCall
 
 
@@ -57,6 +58,7 @@ class Agent:
             raise RuntimeError("LLM exceeded the maximum number of tool rounds")
 
         content, _ = self._parse_result(result)
+        sentiment_score, sentiment_label = score_sentiment(content)
         self.memory.add({
             "task": task,
             "response": content,
@@ -66,6 +68,8 @@ class Agent:
             content=content,
             sources=sources,
             tool_calls=tool_calls,
+            sentiment_score=sentiment_score,
+            sentiment_label=sentiment_label,
         )
 
     def run_discussion_turn(
@@ -109,6 +113,7 @@ class Agent:
 
         content, tool_calls = self._complete_with_tools(messages)
         sources = self._sources_from_tool_calls(tool_calls)
+        sentiment_score, sentiment_label = score_sentiment(content)
         self.memory.add({"task": task, "response": content})
 
         return AgentResponse(
@@ -116,6 +121,8 @@ class Agent:
             sources=sources,
             tool_calls=tool_calls,
             metadata={"received_messages": received_messages or []},
+            sentiment_score=sentiment_score,
+            sentiment_label=sentiment_label,
         )
 
     def _complete_with_tools(
