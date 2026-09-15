@@ -16,9 +16,9 @@ class WebSearchTool(ToolInterface):
         api_key: str | None = None,
         max_results: int = 3,
     ) -> None:
-        # Use the supplied key, or read it from the environment.
+        # None uses the environment; an explicit empty key disables Tavily.
         self.api_key = (
-            api_key or os.environ.get("TAVILY_API_KEY", "")
+            os.environ.get("TAVILY_API_KEY", "") if api_key is None else api_key
         ).strip()
 
         if not 1 <= max_results <= 20:

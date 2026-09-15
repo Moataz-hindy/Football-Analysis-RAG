@@ -76,7 +76,9 @@ def test_web_search_tool_properties():
 
 def test_web_search_tool_duckduckgo_fallback(monkeypatch):
     from src.tools.web_search import WebSearchTool
+    monkeypatch.setenv("TAVILY_API_KEY", "fake-environment-key")
     tool = WebSearchTool(api_key="")
+    assert tool.api_key == ""
     monkeypatch.setattr(
         tool,
         "_duckduckgo_search",
@@ -85,6 +87,13 @@ def test_web_search_tool_duckduckgo_fallback(monkeypatch):
     res = tool.run({"query": "Argentina Egypt 2026"})
     assert "Test Title" in res
     assert "https://test.com" in res
+
+
+def test_web_search_default_uses_environment_key(monkeypatch):
+    from src.tools.web_search import WebSearchTool
+    monkeypatch.setenv("TAVILY_API_KEY", "fake-environment-key")
+    assert WebSearchTool().api_key == "fake-environment-key"
+    assert WebSearchTool(api_key="explicit-key").api_key == "explicit-key"
 
 
 def test_agent_sources_from_web_search_tool_call():
