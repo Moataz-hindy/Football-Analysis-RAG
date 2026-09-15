@@ -65,3 +65,68 @@ def test_tool_registry_execute():
 
     res = registry.execute("calculator", {"expression": "5 * 4"})
     assert res == 20
+
+
+def test_web_search_tool_properties():
+    from src.tools.web_search import WebSearchTool
+    tool = WebSearchTool()
+    assert tool.name == "web_search"
+    assert "query" in tool.parameters["properties"]
+
+
+def test_web_search_tool_duckduckgo_fallback(monkeypatch):
+    from src.tools.web_search import WebSearchTool
+    tool = WebSearchTool(api_key="")
+    monkeypatch.setattr(
+        tool,
+        "_duckduckgo_search",
+        lambda q: "Title: Test Title\nURL: https://test.com\nContent: Test Snippet",
+    )
+    res = tool.run({"query": "Argentina Egypt 2026"})
+    assert "Test Title" in res
+    assert "https://test.com" in res
+
+
+def test_agent_sources_from_web_search_tool_call():
+    from src.agent.agent import Agent
+    from src.agent.types import ToolCall
+
+    call = ToolCall(
+        name="web_search",
+        arguments={"query": "test"},
+        result="Title: VAR Disallowed Goal\nURL: https://athletic.com/var\nContent: Ziko goal ruled out for foul.",
+    )
+    sources = Agent._sources_from_tool_calls([call])
+    assert len(sources) == 1
+    assert sources[0].source == "https://athletic.com/var"
+    assert "Ziko goal ruled out" in sources[0].content
+    assert sources[0].metadata["title"] == "VAR Disallowed Goal"
+
+
+def test_web_search_tool_queries_list(monkeypatch):
+    from src.tools.web_search import WebSearchTool
+    tool = WebSearchTool(api_key="")
+    monkeypatch.setattr(
+        tool,
+        "_duckduckgo_search",
+        lambda q: f"Title: Result for {q}\nURL: https://example.com/{q}\nContent: Match facts.",
+    )
+    # Test with list of queries as sent by Gemini
+    res = tool.run({"queries": ["England vs France", "Tuchel tactics"]})
+    assert "England vs France" in res
+    assert "Tuchel tactics" in res
+
+
+def test_agent_sources_ignores_tool_errors():
+    from src.agent.agent import Agent
+    from src.agent.types import ToolCall
+
+    error_call = ToolCall(
+        name="web_search",
+        arguments={"queries": ["test"]},
+        result="Error executing tool 'web_search': web_search requires a non-empty string 'query' argument.",
+    )
+    sources = Agent._sources_from_tool_calls([error_call])
+    assert len(sources) == 0
+
+

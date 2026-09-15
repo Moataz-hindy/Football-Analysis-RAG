@@ -63,20 +63,47 @@ def search(question, k=5, client=None, model=None, conn=None):
         client, model = get_client()
     if conn is None:
         conn = get_connection()
+    rows = []
+    try:
+        query_vec = embed_query(client, model, question)
+        cur = conn.cursor()
+        cur.execute(SQL, {"vec": query_vec, "k": k})
+        rows = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        # Fallback to database keyword matching with relevance ranking when embedding provider is rate-limited or offline
+        terms = [w.strip() for w in question.replace("?", "").replace("'", "").replace('"', '').split() if len(w.strip()) > 3]
+        if terms:
+            where_clause = " OR ".join(["text ILIKE %s OR title ILIKE %s" for _ in terms])
+            title_score = " + ".join(["(CASE WHEN title ILIKE %s THEN 50 ELSE 0 END)" for _ in terms])
+            text_score = " + ".join(["(CASE WHEN text ILIKE %s THEN 10 ELSE 0 END)" for _ in terms])
+            sql_fallback = f"""
+                SELECT doc_id, chunk_index, title, url, text, 0.75 AS similarity
+                FROM football_chunks
+                WHERE {where_clause}
+                ORDER BY ({title_score} + {text_score}) DESC, chunk_index ASC
+                LIMIT %s
+            """
+            params = []
+            for t in terms:
+                params.extend([f"%{t}%", f"%{t}%"])
+            for t in terms:
+                params.append(f"%{t}%")
+            for t in terms:
+                params.append(f"%{t}%")
+            params.append(k)
+            cur = conn.cursor()
+            cur.execute(sql_fallback, params)
+            rows = cur.fetchall()
+            cur.close()
 
-    query_vec = embed_query(client, model, question)
-
-    cur = conn.cursor()
-    cur.execute(SQL, {"vec": query_vec, "k": k})
-    rows = cur.fetchall()
-    cur.close()
     if own_conn:
         conn.close()
 
     return [
         {
             "doc_id": r[0], "chunk_index": r[1], "title": r[2],
-            "url": r[3], "text": r[4], "similarity": r[5],
+            "url": r[3], "text": r[4], "similarity": float(r[5]) if r[5] is not None else 0.0,
         }
         for r in rows
     ]

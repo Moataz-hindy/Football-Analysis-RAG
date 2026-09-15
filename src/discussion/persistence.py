@@ -75,7 +75,7 @@ def save_discussion(
 
         # Atomic write: write to temp file then rename
         with open(temp_file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
 
         os.replace(temp_file_path, file_path)
 
@@ -289,32 +289,32 @@ def _extract_opinion(content: str) -> dict[str, str]:
     reasoning = ""
     sources_used = ""
 
-    # Try to extract STANCE
+    # Try to extract STANCE (supports plain STANCE:, **STANCE:**, ### STANCE:, etc.)
     stance_match = re.search(
-        r"STANCE\s*:\s*(.+?)(?=\nREASONING\s*:|$)",
+        r"(?:^|\n)[\*\_#>\s]*\bSTANCE\b[\*\_]*\s*:\s*[\*\_]*(.+?)(?=\n[\*\_#>\s]*\bREASONING\b[\*\_]*\s*:|$)",
         content,
         re.DOTALL | re.IGNORECASE,
     )
     if stance_match:
-        stance = stance_match.group(1).strip()
+        stance = re.sub(r"^[\*\_]+|[\*\_]+$", "", stance_match.group(1).strip()).strip()
 
     # Try to extract REASONING
     reasoning_match = re.search(
-        r"REASONING\s*:\s*(.+?)(?=\nSOURCES?\s*USED\s*:|$)",
+        r"(?:^|\n)[\*\_#>\s]*\bREASONING\b[\*\_]*\s*:\s*[\*\_]*(.+?)(?=\n[\*\_#>\s]*\bSOURCES?\s*USED\b[\*\_]*\s*:|$)",
         content,
         re.DOTALL | re.IGNORECASE,
     )
     if reasoning_match:
-        reasoning = reasoning_match.group(1).strip()
+        reasoning = re.sub(r"^[\*\_]+|[\*\_]+$", "", reasoning_match.group(1).strip()).strip()
 
     # Try to extract SOURCES USED
     sources_match = re.search(
-        r"SOURCES?\s*USED\s*:\s*(.+)",
+        r"(?:^|\n)[\*\_#>\s]*\bSOURCES?\s*USED\b[\*\_]*\s*:\s*[\*\_]*(.+)",
         content,
         re.DOTALL | re.IGNORECASE,
     )
     if sources_match:
-        sources_used = sources_match.group(1).strip()
+        sources_used = re.sub(r"^[\*\_]+|[\*\_]+$", "", sources_match.group(1).strip()).strip()
 
     return {
         "stance": stance,
@@ -324,9 +324,62 @@ def _extract_opinion(content: str) -> dict[str, str]:
     }
 
 
+# Patterns indicating the agent explicitly maintained or reaffirmed their stance
+_MAINTAIN_PATTERNS = [
+    r"^maintain\b",
+    r"^(?:i\s+)?maintain(?:s|ed|ing)?\b",
+    r"^(?:i\s+)?stand(?:s|ing)?\s+by\b",
+    r"^(?:i\s+)?hold(?:s|ing)?\s+(?:firm|to\s+my|my|the)?\s*(?:position|stance|view)",
+    r"^(?:my|the)\s+(?:position|stance|view|assessment)\s+remains?\s+(?:unchanged|the\s+same|firm|constant)",
+    r"^(?:my|the)\s+(?:position|stance|view|assessment)\s+has\s+not\s+changed",
+    r"^no\s+change\s+(?:in|to)?\s*(?:my|the)?\s*(?:position|stance|view)",
+    r"^(?:i\s+)?(?:reaffirm|reiterate|reassert)(?:s|ed|ing)?\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"^(?:i\s+)?continue(?:s|d|ing)?\s+to\s+(?:hold|maintain|believe|argue|view)",
+    r"^unchanged\b",
+    r"^(?:i\s+)?reject(?:s|ed|ing)?\s+(?:this|the)?\s*(?:consensus|narrative|premise|notion)",
+]
+
+# Patterns where an agent explicitly introduces a shift or concession
+_SHIFT_PATTERNS = [
+    r"\b(?:concede|conceded|conceding)\b",
+    r"\b(?:shift|shifted|shifting)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:change|changed|changing)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:adapt|adapted|adapting)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:adjust|adjusted|adjusting)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:now\s+agree|now\s+accept|now\s+conclude|now\s+believe)\b",
+    r"\b(?:revise|revised|revising)\s+(?:my|the)?\s*(?:position|stance|view)",
+    r"\b(?:partially\s+agree|reconsider|reconsidered)\b",
+]
+
+
 def _stance_changed(previous_stance: str, current_stance: str) -> bool:
-    """Whitespace/case-insensitive comparison used to detect an opinion change."""
-    return previous_stance.strip().lower() != current_stance.strip().lower()
+    """Detect whether an agent's stance genuinely changed between rounds.
+
+    Evaluates:
+    1. Literal equality: Identical or case/whitespace-equivalent stances are unchanged.
+    2. Stance maintenance markers: Phrases like 'I maintain my position',
+       'I hold firm', or 'My stance remains unchanged' signify persistence.
+    3. Stance concession/shift markers: Concession phrases ('I now concede',
+       'I shift my view') indicate genuine evolution even if prefaced with maintenance.
+    4. Lexical difference: If stances differ and no maintenance phrasing is present,
+       it is treated as an evolved position.
+    """
+    prev = previous_stance.strip().lower()
+    curr = current_stance.strip().lower()
+
+    if prev == curr:
+        return False
+
+    is_maintaining = any(re.search(pat, curr) for pat in _MAINTAIN_PATTERNS)
+    has_shift = any(re.search(pat, curr) for pat in _SHIFT_PATTERNS)
+
+    if is_maintaining and not has_shift:
+        return False
+
+    if has_shift:
+        return True
+
+    return prev != curr
 
 
 def _derive_change_reason(reasoning: str) -> str:
@@ -340,8 +393,10 @@ def _derive_change_reason(reasoning: str) -> str:
     if not reasoning:
         return ""
 
-    first_sentence = re.split(r"(?<=[.!?])\s+", reasoning)[0].strip()
-    return first_sentence
+    # Strip leading markdown list markers like "1. ", "- ", "* "
+    cleaned = re.sub(r"^(?:\d+\.|\*|-)\s*", "", reasoning).strip()
+    first_sentence = re.split(r"(?<=[.!?])\s+", cleaned)[0].strip()
+    return first_sentence or cleaned[:120]
 
 
 def build_opinion_history(state: Any) -> list[dict[str, Any]]:
@@ -516,7 +571,7 @@ def save_discussion_from_state(
                 sources_used.append({
                     "content": s.content,
                     "source": getattr(s, "source", ""),
-                    "score": getattr(s, "score", None),
+                    "score": float(s.score) if getattr(s, "score", None) is not None else None,
                     "metadata": getattr(s, "metadata", {}),
                 })
             elif isinstance(s, dict):
@@ -529,9 +584,28 @@ def save_discussion_from_state(
             args = tc.arguments if hasattr(tc, "arguments") else tc.get("arguments", {})
             result = tc.result if hasattr(tc, "result") else tc.get("result")
 
+            if isinstance(result, list):
+                num_results = len(result)
+            elif isinstance(result, str):
+                if result.strip().startswith("Error") or "No web search results found" in result:
+                    num_results = 0
+                else:
+                    cards = [c.strip() for c in result.split("\n---\n") if c.strip()]
+                    num_results = len(cards) if cards else 1
+            elif result is not None:
+                num_results = 1
+            else:
+                num_results = 0
+
+            query_val = args.get("query") or args.get("queries") or args.get("search_query") or str(args)
+            if isinstance(query_val, list):
+                query_str = " | ".join(str(q) for q in query_val)
+            else:
+                query_str = str(query_val)
+
             retrieval_events.append({
-                "query": args.get("query", str(args)),
-                "num_results": len(result) if isinstance(result, list) else 0,
+                "query": query_str,
+                "num_results": num_results,
                 "timestamp": getattr(msg, "timestamp", ""),
                 "metadata": {"tool_name": name, "arguments": args},
             })
