@@ -43,7 +43,11 @@ def test_full_discussion_sentiment_and_analytics_roundtrip(tmp_path, monkeypatch
     assert output['metadata']['scored_snapshots'] == 24
     assert output['metadata']['input_status'] == 'completed'
     assert output['task1_opinion_trajectories']['metadata']['method'] == 'self_report_rules'
-    assert output['task3_agent_influence']['top_influencer'] is None
+    assert output["distance_reduction_influence"]["top_influencer"] is None
+    assert all(
+        row["influence_score"] is None
+        for row in output["task3_agent_influence"]["agent_influences"].values()
+    )
     assert json.loads((tmp_path / 'analytics.json').read_text()) == output
     # Old saved discussions without sentiment fields still load.
     legacy = json.loads(path.read_text())
