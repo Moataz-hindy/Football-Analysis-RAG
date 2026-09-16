@@ -214,6 +214,11 @@ class ReportingAgent(Agent):
             f"  Knowledge-base sources: {len(response.sources)}",
             flush=True,
         )
+        print(
+            f"  Sentiment: {response.sentiment_label}"
+            f" ({response.sentiment_score:+.2f})",
+            flush=True,
+        )
 
     def run(self, task):
         heading(f"ROUND 0 — INITIAL OPINION | {self.agent_id}")
