@@ -43,10 +43,61 @@ _AGENT_COLOURS = [
 _MARKERS = ["o", "s", "D", "^", "v", "P", "X", "h", "*", "d"]
 
 
+def _extract_stance_data_from_trajectories(
+    trajectories_obj: Any,
+) -> dict[str, list[dict[str, Any]]]:
+    """Convert OpinionTrajectoryResult or serialized trajectories dict into stance_data format."""
+    if hasattr(trajectories_obj, "trajectories"):
+        # OpinionTrajectoryResult object
+        return {
+            agent: [
+                {
+                    "round": p.round_num,
+                    "stance": p.stance_value,
+                    "change": p.opinion_change,
+                }
+                for p in points
+            ]
+            for agent, points in trajectories_obj.trajectories.items()
+        }
+    elif isinstance(trajectories_obj, dict):
+        raw = trajectories_obj.get("task1_opinion_trajectories", trajectories_obj)
+        raw_trajectories = raw.get("trajectories", raw)
+        stance_data = {}
+        for agent, points in raw_trajectories.items():
+            agent_points = []
+            for p in points:
+                if isinstance(p, dict):
+                    r = p.get("round_num", p.get("round", 0))
+                    s = p.get("stance_value", p.get("stance"))
+                    c = p.get("opinion_change", p.get("change"))
+                    agent_points.append({"round": r, "stance": s, "change": c})
+                else:
+                    agent_points.append({
+                        "round": getattr(p, "round_num", getattr(p, "round", 0)),
+                        "stance": getattr(p, "stance_value", getattr(p, "stance", None)),
+                        "change": getattr(p, "opinion_change", getattr(p, "change", None)),
+                    })
+            stance_data[agent] = agent_points
+        return stance_data
+    raise ValueError(f"Unrecognized trajectory format: {type(trajectories_obj)}")
+
+
 def _extract_stance_data_from_discussion(
     discussion_data: dict[str, Any],
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
     """Use the shared analytics rules; preserve unknown stances and errors."""
+    # If the input dictionary is already an analytics result, reuse task1
+    if "task1_opinion_trajectories" in discussion_data:
+        traj_data = discussion_data["task1_opinion_trajectories"]
+        config = {
+            "discussion_id": discussion_data.get("discussion_id", traj_data.get("discussion_id", "")),
+            "topic": discussion_data.get("topic", traj_data.get("topic", "")),
+            "num_rounds": traj_data.get("total_rounds", 3),
+            "agent_ids": traj_data.get("agent_ids", list(traj_data.get("trajectories", {}).keys())),
+        }
+        return _extract_stance_data_from_trajectories(traj_data), config
+
     from src.analytics.stance import compute_opinion_trajectories
 
     trajectory = compute_opinion_trajectories(discussion_data)
@@ -55,7 +106,6 @@ def _extract_stance_data_from_discussion(
                  "change": p.opinion_change} for p in points]
         for agent, points in trajectory.trajectories.items()
     }, discussion_data.get("config", {})
-
 
 # ── Core plotting function ──────────────────────────────────────────────
 
@@ -275,8 +325,10 @@ def generate_opinion_trajectory_from_discussion(
     output_dir: str | Path = "reports",
     *,
     filename: str | None = None,
+    scores_from: Any | None = None,
+    trajectories: Any | None = None,
 ) -> str:
-    """Generate an opinion trajectory chart from a DiscussionResult or dict.
+    """Generate an opinion trajectory chart from a DiscussionResult, dict, or saved scores.
 
     This is the main entry point that the unified analytics engine and
     the report generator should call.
@@ -285,24 +337,37 @@ def generate_opinion_trajectory_from_discussion(
     ----------
     discussion_input : DiscussionResult, dict, or str/Path
         Either a DiscussionResult object, its dict representation, or a
-        path to a saved discussion JSON file.
+        path to a saved discussion JSON file / analytics JSON file.
     output_dir : str or Path
         Directory where the chart will be saved.
     filename : str, optional
-        Override the chart filename.  Defaults to
+        Override the chart filename. Defaults to
         ``opinion_trajectory_{discussion_id}.png``.
+    scores_from : str, Path, or dict, optional
+        Saved analytics JSON or dict containing task1_opinion_trajectories
+        to reuse without repeating scoring or model calls.
+    trajectories : OpinionTrajectoryResult or dict, optional
+        Directly provide precomputed trajectories object.
 
     Returns
     -------
     str
         Absolute path to the saved PNG file.
     """
-    # ── Resolve input to a dict ─────────────────────────────────────────
-    if isinstance(discussion_input, (str, Path)):
-        from src.discussion.persistence import load_discussion
-        discussion_input = load_discussion(discussion_input)
+    import json
 
-    if hasattr(discussion_input, "to_dict"):
+    # ── Resolve input to a dict ─────────────────────────────────────────
+    data: dict[str, Any] = {}
+    if isinstance(discussion_input, (str, Path)):
+        path_obj = Path(discussion_input)
+        raw_content = json.loads(path_obj.read_text(encoding="utf-8"))
+        if "config" in raw_content or "messages" in raw_content:
+            from src.discussion.persistence import load_discussion
+            discussion_obj = load_discussion(path_obj)
+            data = discussion_obj.to_dict()
+        else:
+            data = raw_content
+    elif hasattr(discussion_input, "to_dict"):
         data = discussion_input.to_dict()
     elif isinstance(discussion_input, dict):
         data = discussion_input
@@ -311,8 +376,29 @@ def generate_opinion_trajectory_from_discussion(
             f"Expected DiscussionResult, dict, or file path; got {type(discussion_input).__name__}"
         )
 
+    config = data.get("config", {})
+    if not config:
+        config = {
+            "discussion_id": data.get("discussion_id", "discussion"),
+            "topic": data.get("topic", ""),
+            "num_rounds": data.get("total_rounds", 3),
+        }
+
     # ── Extract stance data ─────────────────────────────────────────────
-    stance_data, config = _extract_stance_data_from_discussion(data)
+    if trajectories is not None:
+        stance_data = _extract_stance_data_from_trajectories(trajectories)
+    elif scores_from is not None:
+        if isinstance(scores_from, (str, Path)):
+            loaded_scores = json.loads(Path(scores_from).read_text(encoding="utf-8"))
+        else:
+            loaded_scores = scores_from
+        stance_data = _extract_stance_data_from_trajectories(loaded_scores)
+    elif "task1_opinion_trajectories" in data:
+        stance_data = _extract_stance_data_from_trajectories(data["task1_opinion_trajectories"])
+    else:
+        stance_data, cfg = _extract_stance_data_from_discussion(data)
+        if not config.get("topic"):
+            config = cfg
 
     # ── Determine output path ───────────────────────────────────────────
     disc_id = config.get("discussion_id", "discussion")
@@ -321,7 +407,6 @@ def generate_opinion_trajectory_from_discussion(
     output_path = Path(output_dir) / filename
 
     return plot_opinion_trajectory(stance_data, config, output_path)
-
 
 # ── CLI entry point ─────────────────────────────────────────────────────
 
@@ -347,6 +432,11 @@ if __name__ == "__main__":
         default=None,
         help="Override the chart filename.",
     )
+    parser.add_argument(
+        "--scores-from",
+        default=None,
+        help="Path to saved analytics JSON with cached stance scores.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -356,6 +446,7 @@ if __name__ == "__main__":
             args.input,
             output_dir=args.output_dir,
             filename=args.filename,
+            scores_from=args.scores_from,
         )
         print(f"Chart saved: {path}")
     except Exception as exc:
