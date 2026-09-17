@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
+from datetime import datetime, timezone
 
 
 @dataclass
@@ -24,6 +25,10 @@ class ToolCall:
     name: str
     arguments: dict[str, Any]
     result: Any = None
+    status: str = "success"
+    error: str | None = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -39,3 +44,5 @@ class AgentResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
 
     metadata: dict[str, Any] = field(default_factory=dict)
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None

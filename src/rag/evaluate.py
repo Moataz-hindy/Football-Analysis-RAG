@@ -96,7 +96,8 @@ def evaluate(k: int = 5) -> dict[str, Any]:
                         "doc_id": item["doc_id"],
                         "chunk_index": item["chunk_index"],
                         "title": item["title"],
-                        "similarity": round(float(item["similarity"]), 6),
+                        "similarity": round(float(item["similarity"]), 6) if item.get("similarity") is not None else None,
+                        "retrieval_mode": item.get("retrieval_mode", "vector"),
                     }
                     for rank, item in enumerate(retrieved, start=1)
                 ],

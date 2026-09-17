@@ -6,15 +6,22 @@ Mistral, and a local Ollama. Switching provider is three environment variables -
 see docs/llm_provider.md section 4. Cohere needs its own adapter (section 4.7).
 """
 
+import logging
 import os
+import math
+import re
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError, APIStatusError, RateLimitError
 
 from .interfaces import LLMInterface, ToolInterface
 
-# ToolInterface carries no JSON schema, so tools without a `parameters`
-# property fall back to an open object.
+logger = logging.getLogger(__name__)
+
+# Legacy tools without a `parameters` property fall back to an open object.
 DEFAULT_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {},
@@ -67,14 +74,37 @@ class OpenAICompatibleLLM(LLMInterface):
         self._model = model
         self._temperature = _env_float("LLM_TEMPERATURE", 0.2, temperature)
         self._max_tokens = _env_int("LLM_MAX_TOKENS", 1024, max_tokens)
+        self._max_retries = _env_int("LLM_MAX_RETRIES", 3, max_retries)
+        self._retry_max_wait = _env_float("LLM_RETRY_MAX_WAIT_SECONDS", 120.0)
+        if self._max_retries < 0 or not math.isfinite(self._retry_max_wait) or self._retry_max_wait <= 0:
+            raise ValueError("Invalid retry configuration")
         self._client = OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=_env_float("LLM_TIMEOUT_SECONDS", 60.0, timeout),
-            max_retries=_env_int("LLM_MAX_RETRIES", 3, max_retries),
+            max_retries=0,  # Retry here once, instead of stacking SDK and adapter retries.
         )
         self.last_response: Any = None       # usage / finish_reason, for debugging
         self._emitted: list[list[Any]] = []  # tool calls per round, for message repair
+    @property
+    def model(self) -> str:
+        """Model identifier sent with every request (Requirement 4.8)."""
+        return self._model
+
+    @property
+    def temperature(self) -> float:
+        """Sampling temperature sent with every request (Requirement 4.8)."""
+        return self._temperature
+
+    @property
+    def base_url(self) -> str:
+        """Provider endpoint the client was configured with."""
+        return str(self._client.base_url)
+
+    @property
+    def max_tokens(self) -> int:
+        """Per-request output-token cap."""
+        return self._max_tokens
 
     def generate(
         self,
@@ -93,8 +123,10 @@ class OpenAICompatibleLLM(LLMInterface):
         if tools:
             kwargs["tools"] = [to_tool_schema(tool) for tool in tools]
             kwargs["tool_choice"] = "auto"
-
-        response = self._client.chat.completions.create(**kwargs)
+        if self._model == "qwen/qwen3.6-27b":
+             kwargs["reasoning_effort"] = "none"
+   
+        response = self._request_with_retry(kwargs)
         self.last_response = response
 
         message = response.choices[0].message
@@ -105,6 +137,47 @@ class OpenAICompatibleLLM(LLMInterface):
         # Agent._parse_result() accepts this dict shape. Returning it instead of the
         # raw SDK object stops a null content from becoming the string "None".
         return {"content": message.content or "", "tool_calls": calls}
+
+    def _request_with_retry(self, kwargs):
+        for attempt in range(self._max_retries + 1):
+            try:
+                return self._client.chat.completions.create(**kwargs)
+            except (APIConnectionError, APIStatusError) as error:
+                transient = (isinstance(error, (RateLimitError, APIConnectionError))
+                             or error.status_code >= 500 or error.status_code == 408)
+                if not transient or attempt == self._max_retries:
+                    raise
+                delay = self._retry_delay(error, attempt)
+                if delay > self._retry_max_wait:
+                    # A long quota reset must not silently turn into hours of waiting.
+                    logger.warning("Provider delay exceeds retry budget; stopping for partial save.")
+                    raise
+                logger.warning("Temporary model failure (%s). Retrying request %d/%d in %.1fs.",
+                               type(error).__name__, attempt + 1, self._max_retries, delay)
+                time.sleep(delay)
+
+    @staticmethod
+    def _retry_delay(error, attempt):
+        headers = getattr(getattr(error, "response", None), "headers", {})
+        delay = None
+        try:
+            if headers.get("retry-after-ms"):
+                delay = float(headers["retry-after-ms"]) / 1000
+            elif headers.get("retry-after"):
+                value = headers["retry-after"]
+                try:
+                    delay = float(value)
+                except ValueError:
+                    delay = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            delay = None
+        if delay is None:
+            match = re.search(r"try again in\s+([0-9]+(?:\.[0-9]+)?)s", str(error), re.I)
+            if match:
+                delay = float(match.group(1))
+        if delay is not None and math.isfinite(delay) and delay >= 0:
+            return delay + 1.0  # Small margin beyond the provider's reset time.
+        return float(min(2 ** min(attempt + 1, 6), 60))
 
     def _repair_tool_messages(
         self,
@@ -136,27 +209,38 @@ class OpenAICompatibleLLM(LLMInterface):
                 continue
 
             calls = rounds.pop(0)
+            repaired_calls: list[dict[str, Any]] = []
+            for call in calls:
+                call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else "")
+                func = getattr(call, "function", None) or (call.get("function") if isinstance(call, dict) else None)
+                fname = getattr(func, "name", None) or (func.get("name") if isinstance(func, dict) else "")
+                fargs = getattr(func, "arguments", None) or (func.get("arguments") if isinstance(func, dict) else "")
+                c_dict: dict[str, Any] = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": fname,
+                        "arguments": fargs,
+                    },
+                }
+                # Preserve provider-specific extra content (such as Google Gemini thought_signature)
+                extra = getattr(call, "extra_content", None) or (call.get("extra_content") if isinstance(call, dict) else None)
+                if extra:
+                    c_dict["extra_content"] = extra
+                repaired_calls.append(c_dict)
+
             repaired.append({
                 "role": "assistant",
                 "content": message.get("content") or None,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.function.name,
-                            "arguments": call.function.arguments,
-                        },
-                    }
-                    for call in calls
-                ],
+                "tool_calls": repaired_calls,
             })
             index += 1
             for call in calls:
+                call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else "")
                 if index < len(messages) and messages[index].get("role") == "tool":
                     repaired.append({
                         "role": "tool",
-                        "tool_call_id": call.id,
+                        "tool_call_id": call_id,
                         "content": messages[index].get("content", ""),
                     })
                     index += 1

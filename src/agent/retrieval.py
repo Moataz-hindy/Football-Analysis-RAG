@@ -1,16 +1,7 @@
 from .interfaces import RetrievalInterface
 from .types import RetrievedSource
 
-# Assuming `search` handles its own connection and openrouter calls when None are provided.
-# If not, we might need to handle connection lifecycle here.
-try:
-    from src.rag.search import search
-except ImportError:
-    # Fallback if run from a different directory level
-    import sys
-    import os
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-    from src.rag.search import search
+from src.rag.search import RetrievalError, search
 
 
 class RAGRetrieval(RetrievalInterface):
@@ -18,7 +9,7 @@ class RAGRetrieval(RetrievalInterface):
     Integrates with the Week 1 pgvector knowledge retrieval system.
     """
 
-    def __init__(self, k: int = 3):
+    def __init__(self, k: int = 6):
         self.k = k
 
     def retrieve(self, query: str) -> list[RetrievedSource]:
@@ -30,9 +21,10 @@ class RAGRetrieval(RetrievalInterface):
             # We use the search function from Week 1 which returns a list of dictionaries:
             # doc_id, chunk_index, title, url, text, similarity
             raw_results = search(query, k=self.k)
-        except Exception as e:
-            print(f"Warning: RAG retrieval failed: {e}")
-            return []
+        except RetrievalError:
+            raise
+        except Exception as error:
+            raise RetrievalError("Knowledge retrieval failed.") from error
         
         sources = []
         for result in raw_results:
@@ -40,11 +32,12 @@ class RAGRetrieval(RetrievalInterface):
                 RetrievedSource(
                     content=result.get("text", ""),
                     source=result.get("url") or result.get("title") or result.get("doc_id", "Unknown"),
-                    score=result.get("similarity", 0.0),
+                    score=float(result["similarity"]) if result.get("similarity") is not None else None,
                     metadata={
                         "doc_id": result.get("doc_id"),
                         "chunk_index": result.get("chunk_index"),
-                        "title": result.get("title")
+                        "title": result.get("title"),
+                        "retrieval_mode": result.get("retrieval_mode", "vector")
                     }
                 )
             )

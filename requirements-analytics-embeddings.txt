@@ -1,0 +1,3 @@
+# Optional only: --use-embeddings. The model weights must already be cached.
+-r requirements.txt
+sentence-transformers>=3

@@ -32,6 +32,17 @@ class CalculatorTool(ToolInterface):
             "Perform mathematical calculations and statistical computations accurately. "
             "Argument: 'expression' (str) - math string like '(55 - 45) / 10' or '12 * 3.5'."
         )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "expression": {"type": "string", "description": "math string like '(55 - 45) / 10' or '12 * 3.5'"}
+            },
+            "required": ["expression"],
+        }
+
     def run(self, arguments: dict[str, Any]) -> Any:
         expression = arguments.get("expression")
         if not expression or not isinstance(expression, str):

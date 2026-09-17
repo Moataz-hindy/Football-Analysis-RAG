@@ -5,10 +5,13 @@ import sys
 import json
 import time
 
+# Fix for Windows SSL_CERT_FILE crash
+os.environ.pop("SSL_CERT_FILE", None)
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from utils import chunk_text, CLEAN_DIR, EMBEDDINGS_DIR
+from src.rag.utils import chunk_text, CLEAN_DIR, EMBEDDINGS_DIR
 
 load_dotenv()
 
