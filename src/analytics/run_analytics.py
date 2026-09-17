@@ -8,6 +8,7 @@ import hashlib
 from src.analytics.models import OpinionTrajectoryResult
 from src.analytics.correlation_influence import compute_correlation_influence
 from src.analytics.agreement import compute_discussion_agreement
+from src.analytics.causal_influence import compute_counterfactual_influence
 from src.analytics.influence import compute_agent_influence
 from src.analytics.stance import compute_opinion_trajectories
 from src.discussion.persistence import load_discussion
@@ -76,6 +77,7 @@ def run_analytics_pipeline(
     generate_charts=False,
     generate_report=False,
     reports_dir="reports",
+    counterfactual_ablation=False,
 ):
     protected = set()
     if isinstance(input_path, (str, Path)):
@@ -137,6 +139,19 @@ def run_analytics_pipeline(
         data, {"task1_opinion_trajectories": trajectory_data}
     )
 
+    causal = None
+    if use_llm or counterfactual_ablation:
+        try:
+            causal = compute_counterfactual_influence(
+                data,
+                trajectories=trajectories,
+                positive_pole=positive_pole,
+                negative_pole=negative_pole,
+                correlation_results=correlation,
+            )
+        except Exception as err:
+            warnings.append(f"Counterfactual ablation evaluation error: {err}")
+
     points = [
         point for series in trajectories.trajectories.values()
         for point in series
@@ -172,6 +187,8 @@ def run_analytics_pipeline(
         "task4_sentiment": compute_discussion_sentiment(data),
         "distance_reduction_influence": distance.model_dump(),
     }
+    if causal is not None:
+        output["task3_causal_influence"] = causal.model_dump()
 
     # Do not establish verified scoring provenance for legacy cached scores.
     if scores_from and not fingerprint_verified:
@@ -234,6 +251,8 @@ def run_analytics_pipeline(
     print(f"Agreement trend: {agreement.overall_trend}")
     for agent, row in correlation["agent_influences"].items():
         print(f"{agent}: {row['influence_score']} ({row['status']})")
+    if causal is not None and causal.top_causal_influencer:
+        print(f"Top Causal Influencer (Ablation): {causal.top_causal_influencer} (evaluated {causal.evaluated_exchanges_count} exchanges)")
 
     if output_path:
         out = Path(output_path)
@@ -249,7 +268,7 @@ def run_analytics_pipeline(
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--input', '-i', required=True)
+    parser.add_argument('--input', '-i', '--discussion', dest='input', required=True, help="Path to input discussion JSON")
     parser.add_argument('--output', '-o')
     engines = parser.add_mutually_exclusive_group()
     engines.add_argument('--use-llm', action='store_true', help='Explicitly make additional requests using your configured LLM provider')
@@ -278,6 +297,12 @@ def parse_args(argv=None):
         default="reports",
         help="Directory where charts and reports are saved (default: reports/).",
     )
+    parser.add_argument(
+        "--counterfactual-ablation",
+        action="store_true",
+        dest="counterfactual_ablation",
+        help="Perform LLM-based counterfactual ablation to calculate true causal influence",
+    )
     args = parser.parse_args(argv)
     if (args.use_llm or args.use_embeddings) and not (args.positive_pole and args.negative_pole):
         parser.error('Model scoring requires --positive-pole and --negative-pole')
@@ -286,7 +311,7 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    if args.use_llm:
+    if args.use_llm or args.counterfactual_ablation:
         from dotenv import load_dotenv
         load_dotenv(Path(__file__).resolve().parents[2] / '.env')
     run_analytics_pipeline(
@@ -298,6 +323,7 @@ def main(argv=None):
         generate_charts=args.generate_charts,
         generate_report=args.generate_report,
         reports_dir=args.reports_dir,
+        counterfactual_ablation=args.counterfactual_ablation,
     )
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 from pathlib import Path
 import sys
 from typing import Any
@@ -29,6 +30,25 @@ def _format_score(val: float | None, precision: int = 3, default: str = "N/A") -
     if val is None:
         return default
     return f"{val:.{precision}f}"
+
+
+def _make_relative_image_link(
+    img_path: str | Path | None,
+    report_output_path: str | Path | None,
+    default_filename: str,
+) -> str:
+    """Format image path as clean relative POSIX path for markdown previewers."""
+    if not img_path:
+        return default_filename
+    p = Path(img_path)
+    if report_output_path:
+        rep_dir = Path(report_output_path).resolve().parent
+        try:
+            rel = p.resolve().relative_to(rep_dir)
+            return rel.as_posix()
+        except ValueError:
+            pass
+    return p.name if (p.is_file() or p.suffix) else str(p).replace("\\", "/")
 
 
 def generate_markdown_report(
@@ -82,12 +102,26 @@ def generate_markdown_report(
     initial_agreement = task2.get("initial_agreement")
     final_agreement = task2.get("final_agreement")
     agreement_shift = task2.get("agreement_shift")
+    if round_agreements:
+        scored_agrs = [
+            ra.get("agreement_score")
+            for ra in round_agreements
+            if ra.get("agreement_score") is not None
+        ]
+        if scored_agrs:
+            if initial_agreement is None:
+                initial_agreement = scored_agrs[0]
+            if final_agreement is None:
+                final_agreement = scored_agrs[-1]
+            if agreement_shift is None and len(scored_agrs) > 1:
+                agreement_shift = round(final_agreement - initial_agreement, 3)
 
     # Extract Category 3: Influence
     task3 = analytics_data.get("task3_agent_influence", {})
     correlation_influences = task3.get("agent_influences", {})
     correlation_pairs = task3.get("pairwise_correlations", [])
     dist_influence = analytics_data.get("distance_reduction_influence", {})
+    causal_influence = analytics_data.get("task3_causal_influence", {})
 
     # Extract Category 4: Sentiment
     task4 = analytics_data.get("task4_sentiment", {})
@@ -149,7 +183,15 @@ def generate_markdown_report(
         inf_summary = f"`{top_inf_agent}` (score: {top_inf_score:+.3f})"
     else:
         inf_summary = "Exploratory / Insufficient observations"
-    lines.append(f"| **Lead Influencer** | {inf_summary} | Pearson $r$ correlation |")
+    lines.append(f"| **Lead Influencer (Correlation)** | {inf_summary} | Pearson $r$ correlation |")
+
+    # Lead Causal Influencer (Counterfactual Ablation)
+    top_causal_agent = causal_influence.get("top_causal_influencer")
+    if top_causal_agent:
+        top_c_data = causal_influence.get("agent_causal_influences", {}).get(top_causal_agent, {})
+        c_score = top_c_data.get("causal_score")
+        c_score_str = f"+{c_score:.3f}" if c_score is not None else "N/A"
+        lines.append(f"| **Lead Persuader (Causal)** | `{top_causal_agent}` (mean shift: {c_score_str}) | Counterfactual message ablation |")
 
     # Sentiment summary
     lines.append(f"| **Dialogue Tone** | Mean Compound: {_format_float(mean_sent)} ({scored_msgs}/{total_msgs} messages) | Pos: {pos_pct:.1f}% / Neg: {neg_pct:.1f}% |")
@@ -247,8 +289,22 @@ def generate_markdown_report(
         r_num = ra.get("round_num", 0)
         score = ra.get("agreement_score")
         std = ra.get("stance_std")
+        if std is None and ra.get("variance") is not None:
+            std = round(math.sqrt(float(ra["variance"])), 3)
+
         s_min = ra.get("stance_min")
         s_max = ra.get("stance_max")
+        if s_min is None or s_max is None:
+            round_stances = [
+                pt.get("stance_value")
+                for pts in trajectories.values()
+                for pt in pts
+                if pt.get("round_num") == r_num and pt.get("stance_value") is not None
+            ]
+            if round_stances:
+                s_min = min(round_stances)
+                s_max = max(round_stances)
+
         if s_min is not None and s_max is not None:
             dyad_range = f"[{s_min:+.2f}, {s_max:+.2f}]"
         else:
@@ -286,8 +342,13 @@ def generate_markdown_report(
         row = correlation_influences[ag]
         inf_sc = row.get("influence_score")
         stat = row.get("status", "unknown")
-        targets = row.get("num_targets", 0)
-        vol = row.get("outbound_messages", 0)
+        obs_list = row.get("observations", [])
+        targets = row.get("num_targets")
+        if targets is None:
+            targets = len({obs.get("recipient_id") for obs in obs_list if obs.get("recipient_id")})
+        vol = row.get("outbound_messages")
+        if vol is None:
+            vol = row.get("observation_count", len(obs_list))
         lines.append(f"| **`{ag}`** | {_format_float(inf_sc)} | `{stat}` | {targets} | {vol} msgs |")
 
     lines.append("")
@@ -305,6 +366,56 @@ def generate_markdown_report(
             pair_status = pair.get("status", "ok")
             lines.append(f"| `{sender}` | `{rec}` | {_format_float(r_val)} | {rounds_n} | `{pair_status}` |")
         lines.append("")
+
+    if causal_influence and causal_influence.get("agent_causal_influences"):
+        lines.append("### Observational Correlation vs. Counterfactual Causal Attribution")
+        lines.append("")
+        lines.append("> **Statistical Correlation vs. Cognitive Causation:**  ")
+        lines.append("> While Pearson $r$ measures observational co-movement, **correlation does not imply causation**. In a fast-paced debate, two agents may appear correlated simply because both reacted to the same match statistics (confounding) or shared team loyalties. To isolate genuine persuasion, **Counterfactual Message Ablation** estimates what the recipient's stance would have been had the sender remained silent: $\\tau = |S_{\\text{factual}} - S_{\\text{counterfactual}}|$.")
+        lines.append("")
+        lines.append("| Agent Persona | Pearson Correlation ($r$) | Causal Impact (Mean $\\tau$) | Evaluated Exchanges | Causal Classification |")
+        lines.append("| :--- | :---: | :---: | :---: | :--- |")
+
+        causal_agents = causal_influence.get("agent_causal_influences", {})
+        all_agent_names = sorted(set(list(correlation_influences.keys()) + list(causal_agents.keys())))
+        for ag in all_agent_names:
+            corr_row = correlation_influences.get(ag, {})
+            corr_val = corr_row.get("influence_score")
+            causal_row = causal_agents.get(ag, {})
+            c_score = causal_row.get("causal_score")
+            c_cnt = causal_row.get("exchange_count", 0)
+            c_class = causal_row.get("causal_classification", "Untested")
+            lines.append(
+                f"| **`{ag}`** | {_format_float(corr_val)} | {_format_float(c_score)} | {c_cnt} | `{c_class}` |"
+            )
+        lines.append("")
+
+        # Highlight top counterfactual exchanges
+        highlighted_exchanges = []
+        for ag, c_data in causal_agents.items():
+            for ex in c_data.get("exchanges", []):
+                shift = ex.get("causal_shift", 0.0)
+                if shift is not None and shift > 0.02:
+                    highlighted_exchanges.append(ex)
+
+        if highlighted_exchanges:
+            highlighted_exchanges.sort(key=lambda x: -(x.get("causal_shift") or 0.0))
+            lines.append("#### Highlighted Counterfactual Persuasion Exchanges:")
+            lines.append("")
+            lines.append("| Sender (Intervention) | Recipient | Round | Factual Stance | Counterfactual Stance ($S_{\\neg A}$) | Causal Shift ($\\tau$) | Mechanistic Rationale |")
+            lines.append("| :--- | :--- | :---: | :---: | :---: | :---: | :--- |")
+            for ex in highlighted_exchanges[:6]:
+                snd = ex.get("sender_id", "N/A")
+                rcp = ex.get("recipient_id", "N/A")
+                rnd = ex.get("round_num", 0)
+                f_s = ex.get("factual_stance")
+                cf_s = ex.get("counterfactual_stance")
+                s_val = ex.get("causal_shift")
+                rat = ex.get("attribution_rationale", "")
+                lines.append(
+                    f"| `{snd}` | `{rcp}` | Round {rnd} | {_format_float(f_s)} | {_format_float(cf_s)} | **{_format_float(s_val)}** | {rat} |"
+                )
+            lines.append("")
 
     # ─────────────────────────────────────────────────────────────────────
     # Category 4: Sentiment Analysis
@@ -348,8 +459,8 @@ def generate_markdown_report(
     lines.append("---")
     lines.append("## 5. Visualizations & Network Artifacts")
     lines.append("")
-    chart_rel = chart_image_path or f"opinion_trajectory_{disc_id}.png"
-    graph_rel = graph_image_path or f"interaction_graph_{disc_id}.png"
+    chart_rel = _make_relative_image_link(chart_image_path, output_path, f"opinion_trajectory_{disc_id}.png")
+    graph_rel = _make_relative_image_link(graph_image_path, output_path, f"interaction_graph_{disc_id}.png")
 
     lines.append(f"### Opinion Trajectory Chart")
     lines.append(f"![Opinion Trajectory]({chart_rel})")

@@ -305,15 +305,36 @@ def plot_opinion_trajectory(
     )
 
     # ── Save ────────────────────────────────────────────────────────────
-    fig.savefig(
-        str(output_path),
-        dpi=dpi,
-        bbox_inches="tight",
-        facecolor=fig.get_facecolor(),
-    )
+    output_p = Path(output_path).resolve()
+    output_p.parent.mkdir(parents=True, exist_ok=True)
+    saved = False
+    for attempt in range(3):
+        try:
+            with open(output_p, "wb") as f:
+                fig.savefig(
+                    f,
+                    format="png",
+                    dpi=dpi,
+                    bbox_inches="tight",
+                    facecolor=fig.get_facecolor(),
+                )
+            saved = True
+            break
+        except (OSError, PermissionError):
+            import time
+            time.sleep(0.3)
+
+    if not saved:
+        fig.savefig(
+            str(output_p),
+            format="png",
+            dpi=dpi,
+            bbox_inches="tight",
+            facecolor=fig.get_facecolor(),
+        )
     plt.close(fig)
 
-    abs_path = str(output_path.resolve())
+    abs_path = str(output_p)
     logger.info("Opinion trajectory chart saved to %s", abs_path)
     return abs_path
 
@@ -404,7 +425,7 @@ def generate_opinion_trajectory_from_discussion(
     disc_id = config.get("discussion_id", "discussion")
     if filename is None:
         filename = f"opinion_trajectory_{disc_id}.png"
-    output_path = Path(output_dir) / filename
+    output_path = Path(output_dir).resolve() / filename
 
     return plot_opinion_trajectory(stance_data, config, output_path)
 

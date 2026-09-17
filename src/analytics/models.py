@@ -169,3 +169,55 @@ class DiscussionInfluenceResult(BaseModel):
             if inf.influence_score is not None and inf.status == "valid"
         ]
         return sorted(scored, key=lambda item: item[1], reverse=True)
+
+
+class CounterfactualExchange(BaseModel):
+    """An individual routed exchange evaluated under counterfactual ablation."""
+
+    round_num: int
+    sender_id: str
+    recipient_id: str
+    factual_stance: float | None = Field(default=None, ge=-1.0, le=1.0)
+    counterfactual_stance: float | None = Field(default=None, ge=-1.0, le=1.0)
+    causal_shift: float | None = Field(
+        default=None,
+        description="Magnitude of change: |factual_stance - counterfactual_stance| in [0.0, 2.0].",
+    )
+    attribution_rationale: str = Field(
+        default="",
+        description="Qualitative causal explanation of why the message did or did not alter the recipient's stance.",
+    )
+
+
+class AgentCausalInfluence(BaseModel):
+    """Aggregated counterfactual causal impact metrics for an individual agent."""
+
+    agent_id: str
+    causal_score: float | None = Field(
+        default=None,
+        description="Average causal shift induced across all observed counterfactual ablations.",
+    )
+    status: str = Field(
+        default="computed",
+        description="'computed', 'no_exchanges', 'insufficient_data', or 'not_run'.",
+    )
+    exchange_count: int = Field(default=0)
+    exchanges: list[CounterfactualExchange] = Field(default_factory=list)
+    causal_classification: str = Field(
+        default="Untested",
+        description="'Genuine Persuader', 'Moderate Contributor', 'Low Impact', or 'Neutral'.",
+    )
+
+
+class DiscussionCausalResult(BaseModel):
+    """Counterfactual causal evaluation across all agents in a discussion."""
+
+    discussion_id: str
+    agent_causal_influences: dict[str, AgentCausalInfluence] = Field(default_factory=dict)
+    top_causal_influencer: str | None = Field(default=None)
+    evaluated_exchanges_count: int = Field(default=0)
+    method: str = Field(default="counterfactual_ablation_evaluator")
+    comparison_summary: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Contrasting observational correlation vs counterfactual causal influence.",
+    )

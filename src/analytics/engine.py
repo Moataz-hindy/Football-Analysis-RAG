@@ -18,8 +18,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.analytics.run_analytics import run_analytics_pipeline
-
 
 class AnalyticsEngine:
     """Reusable analytics engine consuming Week 3 discussion history.
@@ -51,6 +49,7 @@ class AnalyticsEngine:
         generate_charts: bool = False,
         generate_report: bool = False,
         reports_dir: str | Path | None = None,
+        counterfactual_ablation: bool = False,
     ) -> dict[str, Any]:
         """Compute all 4 analytics categories and optionally generate charts & reports.
 
@@ -76,6 +75,8 @@ class AnalyticsEngine:
             Whether to generate an automated Markdown report.
         reports_dir : str or Path, optional
             Directory to store generated visualizations and reports.
+        counterfactual_ablation : bool, default False
+            Whether to run LLM counterfactual ablation to evaluate causal influence.
 
         Returns
         -------
@@ -84,6 +85,7 @@ class AnalyticsEngine:
             metadata, and optional visualization/report file paths.
         """
         target_reports_dir = reports_dir or self.reports_dir
+        from src.analytics.run_analytics import run_analytics_pipeline
 
         return run_analytics_pipeline(
             discussion,
@@ -96,4 +98,5 @@ class AnalyticsEngine:
             generate_charts=generate_charts,
             generate_report=generate_report,
             reports_dir=str(target_reports_dir),
+            counterfactual_ablation=counterfactual_ablation,
         )

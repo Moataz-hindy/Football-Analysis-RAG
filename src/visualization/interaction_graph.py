@@ -361,10 +361,24 @@ def plot_interaction_graph(
     ax.axis("off")
     plt.tight_layout(rect=[0.02, 0.05, 0.98, 0.90])
 
-    abs_path = str(output_path.resolve())
-    plt.savefig(abs_path, dpi=dpi, facecolor=fig.get_facecolor(), bbox_inches="tight")
+    output_p = Path(output_path).resolve()
+    output_p.parent.mkdir(parents=True, exist_ok=True)
+    saved = False
+    for attempt in range(3):
+        try:
+            with open(output_p, "wb") as f:
+                fig.savefig(f, format="png", dpi=dpi, facecolor=fig.get_facecolor(), bbox_inches="tight")
+            saved = True
+            break
+        except (OSError, PermissionError):
+            import time
+            time.sleep(0.3)
+
+    if not saved:
+        fig.savefig(str(output_p), format="png", dpi=dpi, facecolor=fig.get_facecolor(), bbox_inches="tight")
     plt.close(fig)
 
+    abs_path = str(output_p)
     logger.info("Saved interaction graph to %s", abs_path)
     return abs_path
 
@@ -400,7 +414,7 @@ def generate_interaction_graph_from_discussion(
     if filename is None:
         filename = f"interaction_graph_{disc_id}.png"
 
-    output_path = Path(output_dir) / filename
+    output_path = Path(output_dir).resolve() / filename
     return plot_interaction_graph(graph, config, output_path, title=title)
 
 
