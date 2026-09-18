@@ -92,13 +92,14 @@ class Agent:
         )
         messages[0]["content"] += (
             "\n\nThis is a live discussion turn with tools enabled (`web_search`, `knowledge_search`, `calculator`).\n"
-            "MANDATORY VERIFICATION DIRECTIVE:\n"
-            "Review the claims and arguments in the received messages from other analysts:\n"
-            "- If an opponent alleges officiating bias, referee influence, controversial decisions (e.g. VAR reviews, disallowed goals, penalty calls), "
-            "or contested match events, you MUST invoke `web_search` or `knowledge_search` first to verify the facts before answering.\n"
-            "- If you want to challenge an opponent's factual assertion or if critical match facts are in dispute, "
-            "use `web_search` (e.g., query: '<match> referee VAR disallowed goal controversy') to retrieve verified reporting.\n"
-            "- Do not guess or argue over unverified premises. First retrieve the facts with tools, then deliver your analytical stance."
+            "MANDATORY VERIFICATION & EVIDENCE HUNTING DIRECTIVE:\n"
+            "Review the claims, data, and counter-arguments in the received messages from other analysts:\n"
+            "- PROACTIVE EVIDENCE SEARCH: If an opponent challenges your thesis, or if you need specific match statistics, "
+            "tactical metrics (e.g. xG, shots on target, errors leading to goals, duel percentages), or external reporting, "
+            "you MUST proactively invoke `web_search` or `knowledge_search` to find and cite fresh empirical evidence.\n"
+            "- If an opponent alleges officiating bias, controversial decisions (e.g. VAR reviews, disallowed goals, penalty calls), "
+            "or contested match events, use `web_search` to retrieve verified reporting.\n"
+            "- Ground your arguments in the retrieved facts rather than unverified assumptions."
         )
 
         content, tool_calls = self._complete_with_tools(messages)

@@ -167,11 +167,14 @@ def compute_counterfactual_influence(
                 comparison_summary={"status": "llm_client_unavailable", "error": str(err)},
             )
 
-    # Evaluate in smaller batches of 4 exchanges per LLM call to guarantee token headroom
+    # Evaluate in batches of 8 exchanges per LLM call to balance token headroom and request rate limits
     evaluated_records: dict[int, dict[str, Any]] = {}
-    batch_size = 4
+    batch_size = 8
 
+    import time
     for start in range(0, len(candidate_exchanges), batch_size):
+        if start > 0:
+            time.sleep(1.0)
         batch = candidate_exchanges[start:start + batch_size]
         items_payload = []
         for b in batch:

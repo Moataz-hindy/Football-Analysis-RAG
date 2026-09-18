@@ -172,7 +172,7 @@ class OpenAICompatibleLLM(LLMInterface):
         except (ValueError, TypeError, OverflowError):
             delay = None
         if delay is None:
-            match = re.search(r"try again in\s+([0-9]+(?:\.[0-9]+)?)s", str(error), re.I)
+            match = re.search(r"(?:try again|retry)\s+in\s+([0-9]+(?:\.[0-9]+)?)s", str(error), re.I)
             if match:
                 delay = float(match.group(1))
         if delay is not None and math.isfinite(delay) and delay >= 0:

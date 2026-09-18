@@ -85,6 +85,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="personas",
         help="Directory containing the persona YAML files (default: personas).",
     )
+    parser.add_argument(
+        "--dynamic-personas",
+        action="store_true",
+        dest="dynamic_personas",
+        help="Dynamically generate 3v3 polarized personas based on the debate topic using LLM.",
+    )
+    parser.add_argument(
+        "--force-regenerate",
+        action="store_true",
+        dest="force_regenerate",
+        help="Force regeneration of dynamic personas even if cached in personas/generated/<id>/.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        dest="overwrite",
+        help="Overwrite existing output JSON file if discussion ID already exists.",
+    )
     return parser.parse_args(argv)
 
 
@@ -97,34 +115,71 @@ def main(argv: list[str] | None = None) -> int:
 
     if not re.fullmatch(r"[A-Za-z0-9_-]+", discussion_id):
         raise ValueError("Use only letters, digits, underscores and hyphens in discussion IDs")
-    if (Path(args.output_dir) / f"{discussion_id}.json").exists():
-        raise ValueError("That discussion ID already exists; choose a new ID to preserve its history")
+    output_file = Path(args.output_dir) / f"{discussion_id}.json"
+    if output_file.exists() and not args.overwrite:
+        raise ValueError("That discussion ID already exists; choose a new ID or pass --overwrite to replace it")
 
-    router = GraphRouter()
     llm = OpenAICompatibleLLM()  # one shared adapter; config is captured from it
-
     agents: dict[str, Agent] = {}
     persona_files: dict[str, str] = {}
-    for agent_id in sorted(router.graph.graph.nodes):
-        persona_file = f"{agent_id}.yaml"
-        persona = load_persona(Path(args.personas_dir) / persona_file)
-        persona_files[agent_id] = persona_file
 
-        retrieval = RAGRetrieval(k=6)
-        config = AgentConfig(
-            persona=persona,
-            memory=ConversationMemory(llm=llm),
-            retrieval=retrieval,
-            tools=ToolRegistry(
-                tools=[
-                    CalculatorTool(),
-                    KnowledgeSearchTool(retrieval=retrieval),
-                    WebSearchTool(),
-                ]
-            ),
+    if args.dynamic_personas:
+        from src.agent.persona_generator import generate_personas_for_topic
+        from src.discussion.graph import DiscussionGraph
+
+        personas_dict, persona_files_map, manifest = generate_personas_for_topic(
+            topic=args.topic,
             llm=llm,
+            discussion_id=discussion_id,
+            output_dir=Path(args.personas_dir) / "generated",
+            force_regenerate=args.force_regenerate,
         )
-        agents[agent_id] = Agent(config, max_tool_rounds=3)
+        graph = DiscussionGraph.create_symmetrical_3v3(
+            camp_a=manifest["camp_a"],
+            camp_b=manifest["camp_b"],
+        )
+        router = GraphRouter(graph=graph)
+        persona_files = persona_files_map
+
+        for agent_id in sorted(router.graph.graph.nodes):
+            persona = personas_dict[agent_id]
+            retrieval = RAGRetrieval(k=6)
+            config = AgentConfig(
+                persona=persona,
+                memory=ConversationMemory(llm=llm),
+                retrieval=retrieval,
+                tools=ToolRegistry(
+                    tools=[
+                        CalculatorTool(),
+                        KnowledgeSearchTool(retrieval=retrieval),
+                        WebSearchTool(),
+                    ]
+                ),
+                llm=llm,
+            )
+            agents[agent_id] = Agent(config, max_tool_rounds=3)
+    else:
+        router = GraphRouter()
+        for agent_id in sorted(router.graph.graph.nodes):
+            persona_file = f"{agent_id}.yaml"
+            persona = load_persona(Path(args.personas_dir) / persona_file)
+            persona_files[agent_id] = persona_file
+
+            retrieval = RAGRetrieval(k=6)
+            config = AgentConfig(
+                persona=persona,
+                memory=ConversationMemory(llm=llm),
+                retrieval=retrieval,
+                tools=ToolRegistry(
+                    tools=[
+                        CalculatorTool(),
+                        KnowledgeSearchTool(retrieval=retrieval),
+                        WebSearchTool(),
+                    ]
+                ),
+                llm=llm,
+            )
+            agents[agent_id] = Agent(config, max_tool_rounds=3)
 
     started = time.monotonic()
 

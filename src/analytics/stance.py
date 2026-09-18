@@ -133,13 +133,10 @@ def score_snapshots_with_llm(topic, snapshots, llm_client=None, positive_pole=No
             "\nSCORING GUIDANCE:\n"
             "Evaluate the complete stance AND reasoning against the exact poles. "
             "Do not infer a position from the analyst's name or persona. "
-            "Praise for Egypt's tactics does not support Argentina's tactical superiority. "
-            "Correct officiating does not by itself establish tactical superiority. "
-            "Fatigue or individual brilliance supports tactical attribution only when "
-            "the text explicitly links it to Argentina's tactical actions. "
-            "A factual correction alone does not necessarily change causal attribution. "
-            "Use zero for an explicitly balanced position; use null when the position "
-            "cannot be inferred. Apply the same standard to every snapshot.\n"
+            "Score on a continuous scale from -1.0 (strongly aligned with negative pole) to +1.0 (strongly aligned with positive pole). "
+            "Acknowledge nuanced, weighted positions (e.g. +0.8, +0.6, +0.3, -0.4, -0.7) when the text blends tactical attribution with defensive mistakes or external factors. "
+            "Use zero (0.0) for an explicitly balanced or neutral position; use null when the position cannot be inferred. "
+            "Apply the same standard to every snapshot.\n"
         )
 
 

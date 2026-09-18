@@ -63,3 +63,73 @@ class DiscussionGraph:
         if node not in self.graph:
             raise ValueError(f"Agent '{node}' not found in the discussion graph.")
         return list(self.graph.successors(node))
+
+    @classmethod
+    def create_symmetrical_3v3(
+        cls,
+        camp_a: dict[str, str],
+        camp_b: dict[str, str],
+    ) -> "DiscussionGraph":
+        """Build a strongly-connected symmetrical 3v3 debate graph.
+
+        Connects two opposing camps (Camp A vs. Camp B) where each camp has
+        a 'coach', a 'fan', and a 'pundit':
+        1. Reciprocal Counterparts (Cross-camp direct ideological clash):
+           - coach_a <-> coach_b (tactical chess match)
+           - fan_a <-> fan_b (terrace passion & rivalry)
+           - pundit_a <-> pundit_b (on-pitch physical reality)
+        2. Intra-camp Consultation (allies coordinating arguments):
+           - coach_a <-> pundit_a, coach_b <-> pundit_b
+           - pundit_a <-> fan_a, pundit_b <-> fan_b
+        3. Cross-camp Pressure (interrogating opposing perspectives):
+           - coach_a -> fan_b, coach_b -> fan_a
+           - fan_a -> pundit_b, fan_b -> pundit_a
+
+        Guarantees nx.is_strongly_connected(graph).
+        """
+        instance = cls.__new__(cls)
+        instance.graph = nx.DiGraph()
+
+        coach_a = camp_a["coach"]
+        fan_a = camp_a["fan"]
+        pundit_a = camp_a["pundit"]
+
+        coach_b = camp_b["coach"]
+        fan_b = camp_b["fan"]
+        pundit_b = camp_b["pundit"]
+
+        nodes = [coach_a, fan_a, pundit_a, coach_b, fan_b, pundit_b]
+        instance.graph.add_nodes_from(nodes)
+
+        # 1. Reciprocal Cross-Camp Counterparts
+        instance.graph.add_edge(coach_a, coach_b)
+        instance.graph.add_edge(coach_b, coach_a)
+
+        instance.graph.add_edge(fan_a, fan_b)
+        instance.graph.add_edge(fan_b, fan_a)
+
+        instance.graph.add_edge(pundit_a, pundit_b)
+        instance.graph.add_edge(pundit_b, pundit_a)
+
+        # 2. Intra-Camp Consultation
+        instance.graph.add_edge(coach_a, pundit_a)
+        instance.graph.add_edge(pundit_a, coach_a)
+        instance.graph.add_edge(coach_b, pundit_b)
+        instance.graph.add_edge(pundit_b, coach_b)
+
+        instance.graph.add_edge(pundit_a, fan_a)
+        instance.graph.add_edge(fan_a, pundit_a)
+        instance.graph.add_edge(pundit_b, fan_b)
+        instance.graph.add_edge(fan_b, pundit_b)
+
+        # 3. Cross-Camp Interrogation Bridges
+        instance.graph.add_edge(coach_a, fan_b)
+        instance.graph.add_edge(coach_b, fan_a)
+
+        instance.graph.add_edge(fan_a, pundit_b)
+        instance.graph.add_edge(fan_b, pundit_a)
+
+        if not instance.is_strongly_connected():
+            raise ValueError("Generated symmetrical 3v3 graph is not strongly connected")
+
+        return instance

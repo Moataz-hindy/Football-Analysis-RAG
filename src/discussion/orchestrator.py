@@ -209,18 +209,19 @@ class DiscussionOrchestrator:
                         "Jump immediately into substantive critique and evidence.\n"
                         "- CRITICAL: Do NOT repeat paragraphs from your previous turns or recycle boilerplate text. "
                         "Advance a new, deeper argument or interrogate a specific counter-point in every round.\n"
-                        "- Explain clearly whether you maintain, adapt, or revise your position."
+                        "- DIALECTICAL STANCE CALIBRATION: Engage genuinely with peer evidence. If an opponent highlighted valid match data (e.g. goals conceded, errors, transition moments), "
+                        "calibrate your stance to reflect nuance or dual tactical attribution rather than obstinately repeating 'Maintain'."
                     )
 
                 task = (
                     f"Discussion topic: {state.topic}\n"
                     f"Round: {state.current_round} of {state.total_rounds}\n\n"
                     f"{round_instruction}\n\n"
-                    "Acknowledge verified peer evidence that changes your reasoning, and explain any concession. "
-                    "Do not change your view merely to produce apparent agreement.\n"
+                    "Acknowledge verified peer evidence that changes your reasoning, and explain any concession or calibrated view. "
+                    "Do not change your view merely to produce superficial agreement, but reflect genuine analytical nuance.\n"
                     "If you need to verify claims, call `web_search` or `knowledge_search` first. "
                     "When ready, provide your response in this format:\n"
-                    "STANCE: Your current position (clearly state if you maintain, adapt, or shift).\n"
+                    "STANCE: State your calibrated stance on the debate question (note your core position and any nuanced adjustment or concession in light of peer arguments).\n"
                     "REASONING: Address the specific received arguments and evidence from other analysts.\n"
                     "SOURCES USED: Identify the sources you relied on."
                 )
