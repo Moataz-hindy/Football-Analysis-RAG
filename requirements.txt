@@ -11,3 +11,5 @@ ddgs
 vaderSentiment>=3.3.2,<4
 pydantic>=2,<3
 matplotlib
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
