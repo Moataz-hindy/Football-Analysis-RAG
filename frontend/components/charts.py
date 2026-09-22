@@ -68,7 +68,7 @@ def opinion_trajectory_chart(opinions_df: pd.DataFrame) -> go.Figure:
                 name=label,
                 line=dict(width=2, color=_color_for(i)),
                 marker=dict(size=6),
-                hovertemplate="Round %{x}<br>Opinion: %{y:.2f}<extra>%s</extra>" % label,
+                hovertemplate="Round %{x}<br>Opinion: %{y:.2f}<extra>" + label + "</extra>",
             )
         )
 
