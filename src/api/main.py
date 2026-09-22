@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 
@@ -112,6 +113,10 @@ async def handle_internal_error(request: Request, exc: Exception):
         status_code=500,
         content={"error": "Internal Server Error", "detail": str(exc)},
     )
+
+
+# ── Frontend ──
+app.mount("/app", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
 # ── Mount Routers ──
