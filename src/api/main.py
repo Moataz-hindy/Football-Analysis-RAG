@@ -10,8 +10,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-
+from starlette.concurrency import run_in_threadpool
 from src.api.routes import router
+from src.api.services.discussion_service import(
+    start_discussion_worker,
+    shutdown_discussion_worker
+)
 
 # ── Structured Logging ──
 logging.basicConfig(
@@ -43,12 +47,18 @@ allowed_origins = (
 # ── Application Lifespan ──
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan event handler for startup and shutdown procedures."""
+    """Manage worker startup and graceful shutdown."""
     logger.info("Starting Football Analysis Platform API server...")
     logger.info("Configured CORS origins: %s", allowed_origins)
-    yield
-    logger.info("Shutting down Football Analysis Platform API server...")
 
+    start_discussion_worker()
+
+    try:
+        yield
+    finally:
+        logger.info("Waiting for accepted discussion jobs to finish...")
+        await run_in_threadpool(shutdown_discussion_worker)
+        logger.info("Discussion worker stopped.")
 
 # ── FastAPI App Instance ──
 app = FastAPI(

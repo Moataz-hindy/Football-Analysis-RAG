@@ -9,7 +9,12 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import RedirectResponse
 
-from src.discussion.persistence import list_discussions, load_discussion_by_id
+from starlette.concurrency import run_in_threadpool
+
+from src.api.services.discussion_service import (
+    get_saved_discussion,
+    list_saved_discussions,
+)
 from src.discussion.types import DiscussionResult
 from src.api.schemas import (
     AgentInfluenceOut,
@@ -105,7 +110,7 @@ async def get_topics():
 async def get_discussions():
     """Return summary metadata for all saved discussions in outputs/."""
     try:
-        raw_summaries = list_discussions(output_dir="outputs")
+        raw_summaries = await run_in_threadpool(list_saved_discussions)
         discussions = [
             DiscussionSummary(
                 discussion_id=item.get("discussion_id", ""),
@@ -118,6 +123,13 @@ async def get_discussions():
             for item in raw_summaries
         ]
         return DiscussionListResponse(discussions=discussions)
+    
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        )
+    
     except Exception as exc:
         logger.error("Failed to list discussions: %s", exc, exc_info=True)
         raise HTTPException(
@@ -135,26 +147,17 @@ async def get_discussions():
     summary="Start a new multi-agent discussion",
 )
 async def start_discussion(req: StartDiscussionRequest):
-    """Queue a new discussion for execution.
+    """Schedule a real discussion in the background."""
+    from src.api.services.discussion_service import enqueue_discussion
 
-    NOTE: P1 provides the endpoint stub and API contract.
-    P4 (Backend Integration) wires the background runner to execute
-    the multi-agent discussion engine asynchronously.
-    """
     discussion_id = req.discussion_id or f"disc-{uuid4().hex[:8]}"
 
-    # Try delegating to P4 discussion service if available
-    try:
-        from src.api.services.discussion_service import enqueue_discussion
-        return await enqueue_discussion(discussion_id=discussion_id, request=req)
-    except (ImportError, AttributeError):
-        logger.info("P4 discussion service not detected. Returning stub response for %s", discussion_id)
-
-    return StartDiscussionResponse(
+    return await enqueue_discussion(
         discussion_id=discussion_id,
-        status="queued",
-        message="Discussion has been accepted and queued for execution",
+        request=req,
     )
+
+
 
 
 # ── 5. Discussion Detail ──
@@ -167,7 +170,10 @@ async def start_discussion(req: StartDiscussionRequest):
 async def get_discussion(discussion_id: str):
     """Load and return the complete persistent record of a single discussion."""
     try:
-        discussion: DiscussionResult = load_discussion_by_id(discussion_id, output_dir="outputs")
+        discussion: DiscussionResult = await run_in_threadpool(
+            get_saved_discussion,
+            discussion_id,
+        )    
     except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -217,43 +223,26 @@ async def get_discussion(discussion_id: str):
     summary="Check discussion execution status",
 )
 async def get_discussion_status(discussion_id: str):
-    """Check the execution status of a discussion (completed, running, or not_found)."""
-    # Check if P4 runtime tracker has an in-progress record
-    try:
-        from src.api.services.discussion_service import get_runtime_status
-        rt_status = get_runtime_status(discussion_id)
-        if rt_status is not None:
-            return rt_status
-    except (ImportError, AttributeError):
-        pass
-
-    # Check if completed discussion file exists in outputs/
-    output_file = Path("outputs") / f"{discussion_id}.json"
-    if output_file.is_file():
-        try:
-            with open(output_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            total_rounds = data.get("config", {}).get("num_rounds")
-            return DiscussionStatusResponse(
-                discussion_id=discussion_id,
-                status="completed",
-                current_round=total_rounds,
-                total_rounds=total_rounds,
-                message="Discussion execution completed",
-            )
-        except Exception:
-            return DiscussionStatusResponse(
-                discussion_id=discussion_id,
-                status="completed",
-                message="Discussion execution completed",
-            )
-
-    return DiscussionStatusResponse(
-        discussion_id=discussion_id,
-        status="not_found",
-        message=f"Discussion '{discussion_id}' not found",
+    """Return runtime status and saved checkpoint progress."""
+    from src.api.services.discussion_service import (
+        get_discussion_status_record,
     )
 
+    try:
+        return await run_in_threadpool(
+            get_discussion_status_record,
+            discussion_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        )
 
 # ── 7. Discussion Analytics ──
 @router.get(
@@ -263,153 +252,52 @@ async def get_discussion_status(discussion_id: str):
     summary="Get analytics for a discussion",
 )
 async def get_analytics(discussion_id: str):
-    """Retrieve discussion analytics with cache-first lookup.
+    """Return cached or newly calculated discussion analytics."""
+    from src.api.services.analytics_service import (
+        get_discussion_analytics,
+    )
 
-    Delegates to P4 Analytics Service when available. Otherwise:
-    1. Checks for cached analytics JSON file.
-    2. Runs AnalyticsEngine.analyze() on the discussion.
-    3. Maps the output to the validated AnalyticsResponse schema.
-    """
-    # Delegate to P4 Analytics Service if implemented
     try:
-        from src.api.services.analytics_service import get_discussion_analytics
-        result = await get_discussion_analytics(discussion_id)
-        if result is not None:
-            return result
-    except (ImportError, AttributeError):
-        logger.debug("P4 analytics service not found, using built-in cache/engine fallback")
+        return await get_discussion_analytics(discussion_id)
 
-    # Step A: Load discussion result
-    try:
-        discussion: DiscussionResult = load_discussion_by_id(discussion_id, output_dir="outputs")
     except FileNotFoundError:
+        logger.info(
+            "Analytics requested for missing discussion: %s",
+            discussion_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Discussion '{discussion_id}' not found",
+            detail=f"Discussion '{discussion_id}' not found.",
         )
-    except Exception as exc:
-        logger.error("Error loading discussion %s: %s", discussion_id, exc, exc_info=True)
+
+    except ValueError as exc:
+        logger.warning(
+            "Rejected analytics request for %s: %s",
+            discussion_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid discussion ID or discussion/analytics data.",
+        )
+
+    except RuntimeError as exc:
+        logger.warning(
+            "Analytics temporarily unavailable for %s: %s",
+            discussion_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Analytics are temporarily unavailable. Please retry.",
+        )
+
+    except Exception:
+        logger.exception(
+            "Unexpected analytics failure for %s",
+            discussion_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load discussion for analytics: {exc}",
-        )
-
-    # Step B: Check for cached analytics file to avoid recomputing expensive operations
-    cached_candidates = [
-        Path("reports") / f"{discussion_id}_analytics.json",
-        Path("outputs") / f"{discussion_id}_analytics.json",
-    ]
-    raw_analytics = None
-    is_cached = False
-
-    for candidate in cached_candidates:
-        if candidate.is_file():
-            try:
-                with open(candidate, "r", encoding="utf-8") as f:
-                    raw_analytics = json.load(f)
-                is_cached = True
-                logger.info("Loaded cached analytics for %s from %s", discussion_id, candidate)
-                break
-            except Exception as e:
-                logger.warning("Failed to parse cached analytics file %s: %s", candidate, e)
-
-    # Step C: Compute analytics if not cached
-    if raw_analytics is None:
-        try:
-            from src.analytics.engine import AnalyticsEngine
-            engine = AnalyticsEngine(reports_dir="reports")
-            raw_analytics = engine.analyze(discussion)
-            is_cached = False
-        except Exception as exc:
-            logger.error("Analytics computation failed for %s: %s", discussion_id, exc, exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Analytics computation failed: {exc}",
-            )
-
-    # Step D: Map raw analytics to AnalyticsResponse schema
-    try:
-        # Task 1: Trajectories
-        t1 = raw_analytics.get("task1_opinion_trajectories", {})
-        trajectories: dict[str, list[StancePointOut]] = {}
-        for aid, pts in t1.get("trajectories", {}).items():
-            trajectories[aid] = [
-                StancePointOut(
-                    agent_id=p.get("agent_id", aid) if isinstance(p, dict) else getattr(p, "agent_id", aid),
-                    round_num=p.get("round_num", 0) if isinstance(p, dict) else getattr(p, "round_num", 0),
-                    stance_value=p.get("stance_value") if isinstance(p, dict) else getattr(p, "stance_value", None),
-                    opinion_change=p.get("opinion_change") if isinstance(p, dict) else getattr(p, "opinion_change", None),
-                    stance_text=p.get("stance_text", "") if isinstance(p, dict) else getattr(p, "stance_text", ""),
-                )
-                for p in pts
-            ]
-
-        # Task 2: Agreement
-        t2 = raw_analytics.get("task2_discussion_agreement", raw_analytics.get("task2_agreement", {}))
-        agreement = [
-            RoundAgreementOut(
-                round_num=ra.get("round_num", 0) if isinstance(ra, dict) else getattr(ra, "round_num", 0),
-                agreement_score=ra.get("agreement_score") if isinstance(ra, dict) else getattr(ra, "agreement_score", None),
-                mean_distance=ra.get("mean_distance") if isinstance(ra, dict) else getattr(ra, "mean_distance", None),
-                variance=float(ra.get("variance", 0.0) if isinstance(ra, dict) else getattr(ra, "variance", 0.0)),
-                interpretation=ra.get("interpretation", "") if isinstance(ra, dict) else getattr(ra, "interpretation", ""),
-            )
-            for ra in t2.get("round_agreements", [])
-        ]
-
-        # Task 3: Influence
-        t3 = raw_analytics.get("distance_reduction_influence", raw_analytics.get("task3_agent_influence", {}))
-        agent_influences = t3.get("agent_influences", {})
-        influence = []
-        for aid, inf in agent_influences.items():
-            if isinstance(inf, dict):
-                influence.append(
-                    AgentInfluenceOut(
-                        agent_id=aid,
-                        influence_score=inf.get("influence_score"),
-                        status=inf.get("status", "valid"),
-                        rationale=inf.get("rationale", ""),
-                    )
-                )
-            else:
-                influence.append(
-                    AgentInfluenceOut(
-                        agent_id=aid,
-                        influence_score=getattr(inf, "influence_score", None),
-                        status=getattr(inf, "status", "valid"),
-                        rationale=getattr(inf, "rationale", ""),
-                    )
-                )
-
-        # Task 4: Sentiment
-        t4 = raw_analytics.get("task4_sentiment", {})
-        sentiment = [
-            SentimentOut(
-                round_num=m.get("round_num", 0),
-                sender_id=m.get("agent_id", m.get("sender_id", "")),
-                sentiment_score=m.get("score", m.get("sentiment_score")),
-                sentiment_label=m.get("label", m.get("sentiment_label")),
-            )
-            for m in t4.get("messages", [])
-        ]
-
-        return AnalyticsResponse(
-            discussion_id=discussion.config.discussion_id,
-            topic=discussion.config.topic,
-            opinion_trajectories=trajectories,
-            agreement=agreement,
-            mean_agreement=t2.get("mean_discussion_agreement"),
-            overall_trend=t2.get("overall_trend", "Stable"),
-            influence=influence,
-            top_influencer=t3.get("top_influencer"),
-            sentiment=sentiment,
-            interaction_graph=discussion.config.graph,
-            cached=is_cached,
-            metadata=raw_analytics.get("metadata", {}),
-        )
-    except Exception as exc:
-        logger.error("Failed to map analytics response for %s: %s", discussion_id, exc, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to map analytics response: {exc}",
+            detail="Analytics processing failed. Check the server logs.",
         )

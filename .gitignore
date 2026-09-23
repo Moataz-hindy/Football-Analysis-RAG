@@ -5,3 +5,8 @@ venv/
 .venv/
 outputs/*.json
 !outputs/.gitkeep
+reports/api_cache/
+personas/generated/
+data/embeddings/
+data/raw/
+EOF

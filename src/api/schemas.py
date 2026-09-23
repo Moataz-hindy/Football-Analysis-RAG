@@ -62,21 +62,32 @@ class DiscussionDetailResponse(BaseModel):
 
 # ── Start Discussion ──
 class StartDiscussionRequest(BaseModel):
-    topic: str
-    num_rounds: int = Field(default=3, ge=1, le=10)
-    discussion_id: str | None = None
+    topic: str = Field(min_length=1)
+    num_rounds: int = Field(default=3, ge=3, le=10)
+    discussion_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+
 
 
 class StartDiscussionResponse(BaseModel):
     discussion_id: str
-    status: Literal["queued", "running", "completed", "error"]
+    status: Literal["queued", "running", "completed", "failed"]
     message: str = ""
 
 
 # ── Discussion Status ──
 class DiscussionStatusResponse(BaseModel):
     discussion_id: str
-    status: Literal["running", "completed", "not_found"]
+    status: Literal[
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "not_found",
+        "unknown",
+    ]
     current_round: int | None = None
     total_rounds: int | None = None
     message: str = ""
