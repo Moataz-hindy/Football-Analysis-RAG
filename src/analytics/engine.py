@@ -50,6 +50,7 @@ class AnalyticsEngine:
         generate_report: bool = False,
         reports_dir: str | Path | None = None,
         counterfactual_ablation: bool = False,
+        key_insights: bool = False
     ) -> dict[str, Any]:
         """Compute all 4 analytics categories and optionally generate charts & reports.
 
@@ -99,4 +100,5 @@ class AnalyticsEngine:
             generate_report=generate_report,
             reports_dir=str(target_reports_dir),
             counterfactual_ablation=counterfactual_ablation,
+            key_insights=key_insights,
         )

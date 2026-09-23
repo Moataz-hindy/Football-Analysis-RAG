@@ -51,6 +51,109 @@ def _make_relative_image_link(
     return p.name if (p.is_file() or p.suffix) else str(p).replace("\\", "/")
 
 
+
+def _render_key_insights(result: dict[str, Any] | None) -> list[str]:
+    """Render previously generated insights without another LLM call."""
+    lines = ["---", "## Key Insights", ""]
+
+    result = result or {}
+    status = result.get("status", "not_requested")
+
+    if status == "not_requested":
+        lines.extend([
+            "Key Insights were not requested. Enable them with `--key-insights`.",
+            "",
+        ])
+        return lines
+
+    if status == "failed":
+        lines.extend([
+            "Key Insights are unavailable because analysis failed "
+            "or its output could not be validated.",
+            "",
+        ])
+        return lines
+
+    if status == "no_messages":
+        lines.extend([
+            "No discussion messages were available for analysis.",
+            "",
+        ])
+        return lines
+
+    if status != "completed":
+        lines.extend(["Key Insights have an unknown analysis status.", ""])
+        return lines
+
+    insights = result.get("insights", [])
+
+    if not insights:
+        lines.extend([
+            "The evaluator identified no qualifying evidence-based exchanges.",
+            "",
+        ])
+        return lines
+
+    lines.extend([
+        "These assessments interpret the recorded discussion. "
+        "Quoted evidence is not independently verified here.",
+        "",
+    ])
+
+    role_labels = {
+        "original_position": "Original position",
+        "challenge": "Challenge",
+        "later_response": "Later response",
+    }
+
+    for index, insight in enumerate(insights, start=1):
+        lines.extend([
+            f"### {index}. {insight['title']}",
+            "",
+            f"**Participant assessed:** {insight['target_id']}  ",
+            f"**Challenger:** {insight['challenger_id']}",
+            "",
+            f"**Original claim:** {insight['original_claim']}",
+            "",
+            f"**Counterargument:** {insight['challenge']}",
+            "",
+        ])
+
+        for citation in insight["quotes"]:
+            role = role_labels[citation["role"]]
+            lines.extend([
+                f"**{role} — {citation['speaker']} "
+                f"(round {citation['round_num']}, "
+                f"{citation['message_ref']}):**",
+                "",
+            ])
+
+            # Keep every line of a multiline quotation inside its blockquote.
+            lines.extend(
+                f"> {line}" for line in citation["quote"].splitlines()
+            )
+            lines.append("")
+
+        response_label = insight["counterargument_response"].replace("_", " ")
+
+        lines.extend([
+            f"**Evidence assessment:** {insight['evidence_assessment']}",
+            "",
+            f"**Argument strength:** {insight['argument_trend']}  ",
+            f"**Position change:** {insight['position_change']}  ",
+            f"**Response to counterevidence:** {response_label}",
+            "",
+            f"**Interpretation:** {insight['assessment']}",
+            "",
+            f"**Outcome:** {insight['outcome']}",
+            "",
+        ])
+
+    return lines
+
+
+
+
 def generate_markdown_report(
     analytics_data: dict[str, Any] | str | Path,
     discussion_data: dict[str, Any] | str | Path | None = None,
@@ -89,11 +192,23 @@ def generate_markdown_report(
     topic = analytics_data.get("topic", "Multi-Agent Deliberation")
     metadata = analytics_data.get("metadata", {})
 
+    lines.append(f"| **Stance Scoring Method** | `{scoring_method}` (Cached reuse: `{scores_reused}`) | Verified integrity |")
+    lines.append("")
+
+    lines.extend(
+        _render_key_insights(analytics_data.get("key_insights"))
+    )
+
+
     # Extract Category 1: Opinion Trajectories
     task1 = analytics_data.get("task1_opinion_trajectories", {})
     agent_ids = task1.get("agent_ids", [])
     trajectories = task1.get("trajectories", {})
     total_rounds = task1.get("total_rounds", 3)
+
+    lines.append("---")
+    lines.append("## 1. Opinion Dynamics & Stance Evolution")
+
 
     # Extract Category 2: Agreement
     task2 = analytics_data.get("task2_discussion_agreement", {})

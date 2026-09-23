@@ -5,6 +5,7 @@ from pathlib import Path
 
 import hashlib
 
+from src.analytics.key_insights import analyze_key_insights
 from src.analytics.models import OpinionTrajectoryResult
 from src.analytics.correlation_influence import compute_correlation_influence
 from src.analytics.agreement import compute_discussion_agreement
@@ -78,6 +79,7 @@ def run_analytics_pipeline(
     generate_report=False,
     reports_dir="reports",
     counterfactual_ablation=False,
+    key_insights=False
 ):
     protected = set()
     if isinstance(input_path, (str, Path)):
@@ -189,6 +191,27 @@ def run_analytics_pipeline(
     }
     if causal is not None:
         output["task3_causal_influence"] = causal.model_dump()
+
+    output["key_insights"] = {
+        "status": "not_requested",
+        "insights": [],
+    }
+
+    if key_insights:
+        try:
+            output["key_insights"] = analyze_key_insights(data)
+        except Exception as exc:
+            error_type = type(exc).__name__
+            output["key_insights"] = {
+                "status": "failed",
+                "insights": [],
+                "error_type": error_type,
+            }
+            warnings.append(
+                f"Key Insights unavailable: {error_type}. "
+                "The analysis failed or its output could not be validated."
+            )
+            print(f"Key Insights unavailable ({error_type}).")    
 
     # Do not establish verified scoring provenance for legacy cached scores.
     if scores_from and not fingerprint_verified:
@@ -303,7 +326,16 @@ def parse_args(argv=None):
         dest="counterfactual_ablation",
         help="Perform LLM-based counterfactual ablation to calculate true causal influence",
     )
+
+    parser.add_argument(
+        "--key-insights",
+        action="store_true",
+        help="Use the configured LLM to analyze evidence-based disagreements.",
+    )
     args = parser.parse_args(argv)
+
+    if args.no_llm and args.key_insights:
+        parser.error("--key-insights requires an LLM; remove --no-llm")
     if (args.use_llm or args.use_embeddings) and not (args.positive_pole and args.negative_pole):
         parser.error('Model scoring requires --positive-pole and --negative-pole')
     return args
@@ -311,7 +343,7 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    if args.use_llm or args.counterfactual_ablation:
+    if args.use_llm or args.counterfactual_ablation or args.key_insights:
         from dotenv import load_dotenv
         load_dotenv(Path(__file__).resolve().parents[2] / '.env')
     run_analytics_pipeline(
@@ -324,6 +356,8 @@ def main(argv=None):
         generate_report=args.generate_report,
         reports_dir=args.reports_dir,
         counterfactual_ablation=args.counterfactual_ablation,
+        key_insights=args.key_insights,
+
     )
 
 
