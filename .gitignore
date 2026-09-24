@@ -9,4 +9,7 @@ reports/api_cache/
 personas/generated/
 data/embeddings/
 data/raw/
-EOF
+frontend/node_modules/
+frontend/dist/
+.pytest_cache/
+
