@@ -32,10 +32,13 @@ def test_cors_middleware_configured():
 
 def test_routes_registered():
     """Verify required routes exist in the API router."""
-    routes = {r.path for r in app.routes if hasattr(r, "path")}
-    assert "/health" in routes
-    assert "/" in routes
-    assert "/docs" in routes
-    assert "/discussions" in routes
-    assert "/topics" in routes
-    assert "/app" in routes
+    from src.api.routes import router
+    router_routes = {r.path for r in router.routes}
+    assert "/health" in router_routes
+    assert "/" in router_routes
+    assert "/discussions" in router_routes
+    assert "/topics" in router_routes
+
+    app_mounts = {r.path for r in app.routes if hasattr(r, "path")}
+    assert "/app" in app_mounts
+

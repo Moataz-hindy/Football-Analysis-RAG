@@ -42,8 +42,9 @@ router = APIRouter()
 # ── Root Redirect ──
 @router.get("/", include_in_schema=False)
 async def root():
-    """Redirect root to Swagger UI docs."""
-    return RedirectResponse(url="/docs")
+    """Redirect root to React frontend app."""
+    return RedirectResponse(url="/app/")
+
 
 
 # ── Curated Predefined Topics ──

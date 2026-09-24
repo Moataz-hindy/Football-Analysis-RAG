@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Football Analysis multi-agent discussion room">
+  <title>Touchline | Discussion Room</title>
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="/app/" aria-label="Touchline home"><span class="brand-mark">T</span><span>TOUCHLINE</span></a>
+      <div class="masthead-note">FOOTBALL ANALYSIS / MULTI-AGENT ROOM</div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro" aria-labelledby="page-title">
+      <div class="eyebrow">DISCUSSION ROOM <span class="dot"></span> LIVE WORKSPACE</div>
+      <h1 id="page-title">Put six football minds<br><em>around one table.</em></h1>
+      <p class="intro-copy">Choose a match question, then watch specialist agents challenge, refine, and replay the argument round by round.</p>
+    </section>
+
+    <section class="workspace" aria-label="Discussion workspace">
+      <aside class="setup-panel">
+        <div class="section-kicker">01 / FRAME THE QUESTION</div>
+        <h2>What should the room debate?</h2>
+        <p class="panel-copy">Pick a prepared prompt or shape your own question. Every discussion runs with at least three rounds.</p>
+        <div id="topic-list" class="topic-list" aria-live="polite"><div class="loading-line">Loading topics...</div></div>
+        <form id="custom-topic-form" class="custom-form">
+          <label for="custom-topic">Or write your own topic</label>
+          <div class="input-row">
+            <input id="custom-topic" name="topic" type="text" maxlength="240" placeholder="e.g. Is a high press worth the risk?" autocomplete="off">
+            <button class="icon-button" type="submit" aria-label="Start custom discussion" title="Start custom discussion">&rarr;</button>
+          </div>
+        </form>
+        <div id="launch-status" class="launch-status" role="status" aria-live="polite"></div>
+
+        <div class="saved-heading">
+          <div class="section-kicker">02 / REPLAY A ROOM</div>
+          <button id="refresh-discussions" class="text-button" type="button">Refresh</button>
+        </div>
+        <div id="saved-discussions" class="saved-list" aria-live="polite"><div class="loading-line">Loading saved rooms...</div></div>
+      </aside>
+
+      <section class="room-panel" aria-labelledby="room-title">
+        <div id="empty-room" class="empty-room">
+          <div class="empty-number">03</div>
+          <h2 id="room-title">The room is ready.</h2>
+          <p>Start a topic or open a saved discussion to see the agents, their roles, and the conversation timeline here.</p>
+        </div>
+        <div id="discussion-room" hidden>
+          <div class="room-header">
+            <div>
+              <div class="eyebrow">CURRENT ROOM <span id="room-id"></span></div>
+              <h2 id="room-topic"></h2>
+            </div>
+            <div id="room-meta" class="room-meta"></div>
+          </div>
+          <div id="agent-cards" class="agent-cards"></div>
+          <div class="replay-bar">
+            <div>
+              <div class="section-kicker">REPLAY</div>
+              <strong id="replay-label">Initial opinions</strong>
+            </div>
+            <div class="replay-controls">
+              <button id="replay-reset" class="round-button" type="button" aria-label="Reset replay" title="Reset replay">&#8634;</button>
+              <button id="replay-prev" class="round-button" type="button" aria-label="Previous round" title="Previous round">&#8592;</button>
+              <button id="replay-play" class="play-button" type="button">Play replay</button>
+              <button id="replay-next" class="round-button" type="button" aria-label="Next round" title="Next round">&#8594;</button>
+            </div>
+          </div>
+          <div id="timeline" class="timeline"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <footer class="footer">A conversation is more useful when you can see how it changes.</footer>
+  <script src="/app/app.js" defer></script>
+</body>
+</html>

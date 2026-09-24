@@ -126,7 +126,10 @@ async def handle_internal_error(request: Request, exc: Exception):
 
 
 # ── Frontend ──
-app.mount("/app", StaticFiles(directory="frontend", html=True), name="frontend")
+frontend_dist = os.path.join(os.getcwd(), "frontend", "dist")
+frontend_dir = frontend_dist if os.path.isdir(frontend_dist) else os.path.join(os.getcwd(), "frontend")
+app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
 
 
 # ── Mount Routers ──
