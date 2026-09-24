@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-49097231-77b8-4e9d-a4ed-84d3b9c6d975/styles.css">
+<script src="_ds/nocturne-49097231-77b8-4e9d-a4ed-84d3b9c6d975/_ds_bundle.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);-webkit-font-smoothing:antialiased}
+a{color:var(--color-accent-300);text-decoration:none}a:hover{color:var(--color-accent-100)}
+@keyframes tiPulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes tiIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="position:relative;min-height:100vh;overflow-x:hidden;background:radial-gradient(900px 520px at 12% -8%, color-mix(in srgb, var(--color-accent) 22%, transparent), transparent 70%), radial-gradient(760px 480px at 96% 4%, color-mix(in srgb, var(--color-accent-700) 30%, transparent), transparent 70%), linear-gradient(180deg, var(--color-bg), color-mix(in srgb, var(--color-bg) 80%, black));">
+
+<header style="position:sticky;top:0;z-index:20;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);background:color-mix(in srgb, var(--color-bg) 62%, transparent);border-bottom:1px solid var(--color-divider);">
+  <div style="max-width:1120px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+      <div style="width:34px;height:34px;border-radius:var(--radius-md);border:1px solid var(--color-accent);display:grid;place-items:center;color:var(--color-accent-300);box-shadow:0 0 18px color-mix(in srgb, var(--color-accent) 35%, transparent);"><i class="ph ph-soccer-ball" style="font-size:19px;"></i></div>
+      <div style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-family:var(--font-heading);font-weight:500;font-size:15px;color:var(--color-neutral-100);letter-spacing:-0.01em;">Touchline Intelligence</span>
+        <span style="font-size:12px;color:var(--color-neutral-500);">Multi-Agent Tactical Deliberation</span>
+      </div>
+    </div>
+    <nav style="display:flex;gap:4px;padding:4px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 55%, transparent);border:1px solid var(--color-divider);margin-left:auto;">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+        <button onClick="{{ t.go }}" style="display:flex;align-items:center;gap:7px;padding:7px 14px;border-radius:var(--radius-md);border:1px solid {{ t.border }};background:{{ t.bg }};color:{{ t.color }};font:500 13px var(--font-body);cursor:pointer;" style-hover="color:var(--color-neutral-100);"><i class="{{ t.icon }}" style="font-size:15px;"></i>{{ t.label }}</button>
+      </sc-for>
+    </nav>
+    <div style="display:flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;border:1px solid var(--color-divider);font-size:12px;color:var(--color-neutral-400);font-variant-numeric:tabular-nums;">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 8px var(--color-accent);"></span>API: OK (12ms)
+    </div>
+  </div>
+</header>
+
+<main style="max-width:1120px;margin:0 auto;padding:40px 24px 80px;">
+
+<sc-if value="{{ isArena }}" hint-placeholder-val="{{ true }}">
+  <section style="display:flex;flex-direction:column;gap:28px;">
+    <div style="display:flex;flex-direction:column;gap:10px;max-width:720px;">
+      <h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:clamp(28px,4vw,40px);line-height:1.1;letter-spacing:-0.02em;color:var(--color-neutral-100);text-wrap:balance;">Six specialist agents debate your tactical question — and converge on an answer.</h1>
+      <p style="margin:0;font-size:15px;line-height:1.55;color:var(--color-neutral-400);text-wrap:pretty;">Ask about a match, a system or a matchup. Watch the argument unfold round by round.</p>
+    </div>
+
+    <div style="padding:18px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 60%, transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-divider));box-shadow:0 0 0 4px color-mix(in srgb, var(--color-accent) 7%, transparent), 0 18px 48px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <div style="flex:1 1 320px;display:flex;align-items:center;gap:10px;padding:0 14px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 70%, transparent);border:1px solid var(--color-divider);min-width:0;">
+          <i class="ph ph-magnifying-glass" style="font-size:18px;color:var(--color-neutral-500);"></i>
+          <input value="{{ query }}" onChange="{{ onQuery }}" onKeyDown="{{ onQueryKey }}" placeholder="Ask tactical question or analyze match... (e.g. Japan's 5-4-1 low block vs Spain)" style="flex:1;min-width:0;height:48px;border:0;outline:0;background:transparent;color:var(--color-neutral-100);font:400 15px var(--font-body);"/>
+        </div>
+        <button class="btn btn-primary" onClick="{{ start }}" style="height:50px;padding:0 22px;font-size:14px;display:flex;align-items:center;gap:8px;box-shadow:0 0 22px color-mix(in srgb, var(--color-accent) 30%, transparent);"><i class="ph ph-play-circle" style="font-size:18px;"></i>Start Deliberation</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:12px;color:var(--color-neutral-500);margin-right:4px;">Try</span>
+        <sc-for list="{{ chips }}" as="c" hint-placeholder-count="3">
+          <button onClick="{{ c.pick }}" style="padding:6px 12px;border-radius:999px;border:1px solid var(--color-divider);background:transparent;color:var(--color-neutral-300);font:500 12.5px var(--font-body);cursor:pointer;" style-hover="border-color:var(--color-accent);color:var(--color-accent-200);">{{ c.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="padding:22px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 45%, transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:22px;">
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;">
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 360px;">
+          <span style="font-size:12px;color:var(--color-neutral-500);display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--color-accent);animation:tiPulse 1.6s infinite;"></span>Active deliberation</span>
+          <h2 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:22px;line-height:1.25;color:var(--color-neutral-100);text-wrap:pretty;">{{ topic }}</h2>
+        </div>
+        <div style="flex:0 1 320px;display:flex;flex-direction:column;gap:8px;min-width:240px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">
+            <span style="font-size:13px;color:var(--color-neutral-300);"><span style="font-size:22px;font-weight:500;color:var(--color-accent-200);font-variant-numeric:tabular-nums;">{{ consensus }}%</span> Tactical Alignment</span>
+            <span style="font-size:12px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;">{{ roundLabel }}</span>
+          </div>
+          <div style="height:6px;border-radius:999px;background:var(--color-neutral-900);overflow:hidden;">
+            <div style="height:100%;width:{{ consensusW }};border-radius:999px;background:linear-gradient(90deg, var(--color-accent-700), var(--color-accent));box-shadow:0 0 12px var(--color-accent);transition:width .6s ease;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <sc-for list="{{ agentChips }}" as="a" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 12px 8px 10px;border-radius:var(--radius-md);border:1px solid {{ a.border }};background:{{ a.bg }};">
+            <span style="width:8px;height:8px;border-radius:50%;background:{{ a.dot }};box-shadow:{{ a.glow }};flex-shrink:0;"></span>
+            <div style="display:flex;flex-direction:column;gap:1px;">
+              <span style="font-size:13px;font-weight:500;color:var(--color-neutral-100);">{{ a.name }}</span>
+              <span style="font-size:11.5px;color:var(--color-neutral-500);">{{ a.focus }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-bg) 55%, transparent);border:1px solid var(--color-divider);">
+        <div style="display:flex;gap:4px;">
+          <sc-for list="{{ rounds }}" as="r" hint-placeholder-count="3">
+            <button onClick="{{ r.go }}" style="padding:7px 14px;border-radius:var(--radius-md);border:1px solid {{ r.border }};background:{{ r.bg }};color:{{ r.color }};font:500 13px var(--font-body);cursor:pointer;">{{ r.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:auto;align-items:center;">
+          <button class="btn btn-ghost btn-icon" onClick="{{ prev }}" aria-label="Previous message"><i class="ph ph-skip-back" style="font-size:17px;"></i></button>
+          <button class="btn btn-primary" onClick="{{ togglePlay }}" style="display:flex;align-items:center;gap:7px;min-width:132px;justify-content:center;"><i class="{{ playIcon }}" style="font-size:16px;"></i>{{ playLabel }}</button>
+          <button class="btn btn-ghost btn-icon" onClick="{{ next }}" aria-label="Next message"><i class="ph ph-skip-forward" style="font-size:17px;"></i></button>
+          <span style="font-size:12px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;min-width:48px;text-align:right;">{{ progressLabel }}</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:36px 20px;text-align:center;color:var(--color-neutral-500);font-size:14px;display:flex;flex-direction:column;align-items:center;gap:8px;"><i class="ph ph-chats-circle" style="font-size:28px;color:var(--color-neutral-600);"></i>Press Play to stream the opening statements.</div>
+        </sc-if>
+        <sc-for list="{{ visible }}" as="m" hint-placeholder-count="3">
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <sc-if value="{{ m.roundStart }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--color-neutral-500);padding-top:6px;"><span>{{ m.roundName }}</span><span style="flex:1;height:1px;background:linear-gradient(90deg, var(--color-divider), transparent);"></span></div>
+            </sc-if>
+            <article style="display:flex;gap:14px;animation:tiIn .45s ease both;">
+              <div style="width:38px;height:38px;flex-shrink:0;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-900);border:1px solid var(--color-accent-800);color:var(--color-accent-300);"><i class="{{ m.icon }}" style="font-size:18px;"></i></div>
+              <div style="flex:1;min-width:0;padding:14px 16px;border-radius:4px var(--radius-lg) var(--radius-lg) var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 70%, transparent);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:9px;">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                  <span style="font-size:14px;font-weight:500;color:var(--color-neutral-100);">{{ m.agent }}</span>
+                  <span style="font-size:12px;color:var(--color-neutral-600);font-variant-numeric:tabular-nums;">{{ m.time }}</span>
+                  <span style="margin-left:auto;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums;border:1px solid {{ m.stanceBorder }};background:{{ m.stanceBg }};color:{{ m.stanceColor }};">{{ m.stanceLabel }}</span>
+                </div>
+                <p style="margin:0;font-size:14.5px;line-height:1.6;color:var(--color-neutral-300);text-wrap:pretty;">{{ m.text }}</p>
+                <sc-if value="{{ showTelemetry }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;gap:18px;flex-wrap:wrap;padding-top:8px;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent);">
+                    <sc-for list="{{ m.tele }}" as="t" hint-placeholder-count="2">
+                      <span style="font-size:12px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;">{{ t.k }}: <span style="color:var(--color-neutral-300);">{{ t.v }}</span></span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </article>
+          </div>
+        </sc-for>
+        <sc-if value="{{ composing }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:10px;padding-left:52px;font-size:13px;color:var(--color-neutral-500);"><span style="width:6px;height:6px;border-radius:50%;background:var(--color-accent);animation:tiPulse 1s infinite;"></span>{{ composingLabel }}</div>
+        </sc-if>
+      </div>
+    </div>
+  </section>
+</sc-if>
+
+<sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+  <section style="display:flex;flex-direction:column;gap:24px;">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:32px;letter-spacing:-0.02em;color:var(--color-neutral-100);">History</h1>
+      <p style="margin:0;font-size:15px;color:var(--color-neutral-400);">Every past deliberation. Resume one to replay it in the Arena.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:0 14px;max-width:520px;border-radius:var(--radius-md);background:color-mix(in srgb, var(--color-surface) 60%, transparent);border:1px solid var(--color-divider);">
+      <i class="ph ph-magnifying-glass" style="font-size:17px;color:var(--color-neutral-500);"></i>
+      <input value="{{ search }}" onChange="{{ onSearch }}" placeholder="Filter by team, tournament or date" style="flex:1;min-width:0;height:44px;border:0;outline:0;background:transparent;color:var(--color-neutral-100);font:400 14px var(--font-body);"/>
+      <span style="font-size:12px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;">{{ historyCount }}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:14px;">
+      <sc-for list="{{ historyItems }}" as="h" hint-placeholder-count="6">
+        <div style="padding:18px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 50%, transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:14px;" style-hover="border-color:var(--color-neutral-700);">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;"><sc-for list="{{ h.tags }}" as="tg" hint-placeholder-count="2"><span class="tag tag-neutral">{{ tg }}</span></sc-for></div>
+          <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;line-height:1.35;color:var(--color-neutral-100);text-wrap:pretty;">{{ h.title }}</h3>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;">
+            <span>{{ h.date }}</span>
+            <span><span style="color:var(--color-accent-300);">{{ h.cons }}% Consensus Reached</span> • {{ h.msgs }} messages</span>
+          </div>
+          <button class="btn btn-primary" onClick="{{ h.resume }}" style="margin-top:auto;display:flex;align-items:center;justify-content:center;gap:7px;"><i class="ph ph-arrow-counter-clockwise" style="font-size:15px;"></i>Resume / Replay</button>
+        </div>
+      </sc-for>
+    </div>
+    <sc-if value="{{ historyEmpty }}" hint-placeholder-val="{{ false }}">
+      <p style="margin:0;color:var(--color-neutral-500);font-size:14px;">No deliberations match that search.</p>
+    </sc-if>
+  </section>
+</sc-if>
+
+<sc-if value="{{ isIntel }}" hint-placeholder-val="{{ false }}">
+  <section style="display:flex;flex-direction:column;gap:24px;">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:32px;letter-spacing:-0.02em;color:var(--color-neutral-100);">Intelligence</h1>
+      <p style="margin:0;font-size:15px;color:var(--color-neutral-400);">{{ topic }}</p>
+    </div>
+    <div style="padding:22px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 55%, transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-divider));display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:center;">
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:44px;font-weight:500;letter-spacing:-0.03em;color:var(--color-accent-200);font-variant-numeric:tabular-nums;line-height:1;">91%</span>
+        <span style="font-size:12px;color:var(--color-neutral-500);">Final alignment · Round 3</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <span style="font-size:12px;color:var(--color-neutral-500);">Executive consensus</span>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:var(--color-neutral-200);text-wrap:pretty;">The 5-4-1 holds for roughly 60 minutes if the line sits under 25m. Fresh wing-backs at 58–62' let Japan switch to a 5-2-3 counter-press — Spain's possession becomes the trap. The Statistical Analyst moved furthest, from −0.40 to +0.31.</p>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px;">
+      <div style="padding:20px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 45%, transparent);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;color:var(--color-neutral-100);">Opinion trajectories</h3>
+          <span style="font-size:12px;color:var(--color-neutral-500);">Stance −1 CON → +1 PRO</span>
+        </div>
+        <svg viewBox="0 0 640 280" style="width:100%;height:auto;display:block;">
+          <sc-for list="{{ gridLines }}" as="g" hint-placeholder-count="5">
+            <line x1="40" x2="620" y1="{{ g.y }}" y2="{{ g.y }}" stroke="var(--color-neutral-800)" stroke-dasharray="{{ g.dash }}"></line>
+            <text x="30" y="{{ g.ty }}" text-anchor="end" font-size="11" fill="var(--color-neutral-600)">{{ g.label }}</text>
+          </sc-for>
+          <sc-for list="{{ roundTicks }}" as="rt" hint-placeholder-count="4">
+            <text x="{{ rt.x }}" y="272" text-anchor="middle" font-size="11" fill="var(--color-neutral-500)">{{ rt.label }}</text>
+          </sc-for>
+          <sc-for list="{{ trajectories }}" as="p" hint-placeholder-count="6">
+            <path d="{{ p.d }}" fill="none" stroke="{{ p.color }}" stroke-width="{{ p.w }}" stroke-linecap="round" opacity="{{ p.op }}" style="transition:opacity .2s;"></path>
+            <circle cx="620" cy="{{ p.endY }}" r="3.5" fill="{{ p.color }}" opacity="{{ p.op }}"></circle>
+          </sc-for>
+        </svg>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <sc-for list="{{ trajectories }}" as="p" hint-placeholder-count="6">
+            <button onMouseEnter="{{ p.hover }}" onMouseLeave="{{ clearHover }}" onFocus="{{ p.hover }}" onBlur="{{ clearHover }}" style="display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;border:1px solid var(--color-divider);background:transparent;color:var(--color-neutral-300);font:500 12px var(--font-body);cursor:default;"><span style="width:10px;height:3px;border-radius:2px;background:{{ p.color }};"></span>{{ p.name }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:20px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 45%, transparent);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">
+          <h3 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:16px;color:var(--color-neutral-100);">Agent influence</h3>
+          <span style="font-size:12px;color:var(--color-neutral-500);">Share of consensus shift</span>
+        </div>
+        <sc-for list="{{ influence }}" as="f" hint-placeholder-count="6">
+          <div style="display:flex;flex-direction:column;gap:7px;">
+            <div style="display:flex;align-items:center;gap:10px;font-size:13px;">
+              <span style="width:18px;color:var(--color-neutral-600);font-variant-numeric:tabular-nums;">{{ f.rank }}</span>
+              <i class="{{ f.icon }}" style="font-size:15px;color:var(--color-neutral-400);"></i>
+              <span style="color:var(--color-neutral-200);flex:1;">{{ f.name }}</span>
+              <span style="color:var(--color-neutral-300);font-variant-numeric:tabular-nums;">{{ f.pct }}%</span>
+            </div>
+            <div style="height:5px;margin-left:28px;border-radius:999px;background:var(--color-neutral-900);overflow:hidden;"><div style="height:100%;width:{{ f.w }};border-radius:999px;background:{{ f.bar }};"></div></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+</sc-if>
+
+<sc-if value="{{ isDevops }}" hint-placeholder-val="{{ false }}">
+  <section style="display:flex;flex-direction:column;gap:24px;">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <h1 style="margin:0;font-family:var(--font-heading);font-weight:500;font-size:32px;letter-spacing:-0.02em;color:var(--color-neutral-100);">DevOps</h1>
+      <p style="margin:0;font-size:15px;color:var(--color-neutral-400);">System health for the deliberation engine.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px;">
+      <sc-for list="{{ services }}" as="s" hint-placeholder-count="3">
+        <div style="padding:18px;border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-surface) 50%, transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <i class="{{ s.icon }}" style="font-size:20px;color:var(--color-neutral-300);"></i>
+            <span style="font-size:14px;font-weight:500;color:var(--color-neutral-100);flex:1;">{{ s.name }}</span>
+            <span class="tag tag-accent" style="display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 6px var(--color-accent);"></span>Healthy</span>
+          </div>
+          <span style="font-size:28px;font-weight:500;letter-spacing:-0.02em;color:var(--color-neutral-100);font-variant-numeric:tabular-nums;">{{ s.metric }}</span>
+          <span style="font-size:12.5px;color:var(--color-neutral-500);">{{ s.sub }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="border-radius:var(--radius-lg);background:color-mix(in srgb, var(--color-bg) 80%, black);border:1px solid var(--color-divider);overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--color-divider);">
+        <i class="ph ph-terminal-window" style="font-size:16px;color:var(--color-neutral-500);"></i>
+        <span style="font-size:12.5px;color:var(--color-neutral-400);flex:1;">Health check</span>
+        <button class="btn btn-ghost" onClick="{{ copy }}" style="display:flex;align-items:center;gap:6px;height:30px;font-size:12.5px;"><i class="{{ copyIcon }}" style="font-size:14px;"></i>{{ copyLabel }}</button>
+      </div>
+      <pre style="margin:0;padding:18px;font:400 13px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:var(--color-neutral-300);overflow-x:auto;"><span style="color:var(--color-accent-300);">$</span> curl http://localhost:8000/health | jq
+<span style="color:var(--color-neutral-500);">{</span>
+  <span style="color:var(--color-accent-200);">"status"</span>: "ok",
+  <span style="color:var(--color-accent-200);">"api"</span>: { "service": "fastapi", "port": 8000, "latency_ms": 12 },
+  <span style="color:var(--color-accent-200);">"db"</span>: { "service": "pgvector", "port": 5432, "vector_latency_ms": 1.4 },
+  <span style="color:var(--color-accent-200);">"agents_online"</span>: 6
+<span style="color:var(--color-neutral-500);">}</span></pre>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <a class="btn btn-secondary" href="http://localhost:8000/docs" target="_blank" style="display:flex;align-items:center;gap:7px;"><i class="ph ph-book-open" style="font-size:15px;"></i>Swagger UI · /docs</a>
+      <a class="btn btn-secondary" href="http://localhost:8000/redoc" target="_blank" style="display:flex;align-items:center;gap:7px;"><i class="ph ph-file-text" style="font-size:15px;"></i>ReDoc · /redoc</a>
+    </div>
+  </section>
+</sc-if>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showTelemetry&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;playbackSpeed&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Slow&quot;,&quot;Normal&quot;,&quot;Fast&quot;],&quot;default&quot;:&quot;Normal&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const AGENTS = {
+  tac: { name: 'Tactical Analyst', focus: 'Half-space & Spatial', icon: 'ph ph-strategy' },
+  stat: { name: 'Statistical Analyst', focus: 'xG & PPDA', icon: 'ph ph-chart-line-up' },
+  fan: { name: 'Fan Sentiment', focus: 'Momentum & Psychological Surge', icon: 'ph ph-users-three' },
+  ref: { name: 'Refereeing Analyst', focus: 'Law 12 & VAR', icon: 'ph ph-flag' },
+  perf: { name: 'Performance Analyst', focus: 'Fatigue & Sprints', icon: 'ph ph-heartbeat' },
+  hist: { name: 'Historical Context', focus: 'Precedents', icon: 'ph ph-books' },
+};
+const MSGS = [
+  [1,'tac',0.72,"Japan's back five is compressing the half-spaces well — Pedri receives with his back to goal 70% of the time. The block works as long as the wing-backs aren't dragged out by Spain's overlapping full-backs.",[['Block Depth','21.4m'],['Half-space entries','4']]],
+  [1,'stat',-0.40,"The numbers disagree with the eye test. Spain have generated 1.62 xG from cut-backs alone, and a PPDA of 18.3 means Japan are letting Spain circulate unchallenged.",[['xG against','1.62'],['PPDA','18.3']]],
+  [1,'perf',-0.25,"Japan's midfield three have covered 4.1km more than Spain's in the first half. Sprint counts are already dropping — the block will stretch after the 65th minute.",[['Distance delta','+4.1km'],['Sprints','−18%']]],
+  [2,'hist',0.55,"Precedent favours Japan. In 2022 they beat Germany and Spain from a deep block, then switched to a front-foot press after the break — the low block was a phase, not the plan.",[['Precedents','3'],['Win rate','67%']]],
+  [2,'ref',0.10,"Deep blocks invite contact in the box. Two of Spain's penalty shouts came from wing-back recovery runs — under Law 12, Japan are one mistimed challenge from conceding.",[['VAR reviews','2'],['Fouls in box','3']]],
+  [2,'fan',0.64,"Momentum shifted when Japan went direct. Sentiment surged 22 points in five minutes — this squad feeds off defending as a collective.",[['Sentiment','88%'],['Surge','+22']]],
+  [3,'stat',0.31,"Revised: once Japan drop the line 3m deeper, Spain's cut-back xG falls to 0.08 per entry. The block can hold — if it stays compact under 25m.",[['xG per entry','0.08'],['Block Depth','18.2m']]],
+  [3,'perf',0.20,"Agreed, with one condition: fresh wing-backs by the hour. Substitution timing is the whole plan.",[['Sub window',"58–62'"]]],
+  [3,'tac',0.81,"Consensus position: the 5-4-1 holds for 60 minutes, then transitions to a 5-2-3 counter-press with fresh wide legs. Spain's possession becomes the trap.",[['Alignment','91%'],['Transition trigger',"60'"]]],
+];
+const CONS = [54, 78, 91];
+const TRAJ = { tac:[0.4,0.72,0.75,0.81], stat:[-0.2,-0.4,-0.1,0.31], fan:[0.5,0.6,0.64,0.7], ref:[0,-0.1,0.1,0.15], perf:[0,-0.25,-0.1,0.2], hist:[0.3,0.4,0.55,0.6] };
+const TRAJ_COLORS = { tac:'var(--color-accent)', stat:'var(--color-accent-300)', fan:'var(--color-neutral-300)', ref:'var(--color-neutral-600)', perf:'var(--color-accent-700)', hist:'var(--color-neutral-500)' };
+const INFL = [['tac',34],['stat',24],['hist',16],['fan',12],['perf',9],['ref',5]];
+const HISTORY = [
+  ["Japan's 5-4-1 low block vs Spain — can it hold for 90 minutes?",'Sep 22, 2026 · 21:14',91,9,['Japan','Spain','World Cup']],
+  ['Arsenal high-press vs City: who wins the first-phase battle?','Sep 19, 2026 · 18:02',86,18,['Arsenal','Man City','Premier League']],
+  ['France 2022 Final xG — was Argentina’s win deserved?','Sep 14, 2026 · 10:47',73,21,['France','Argentina','World Cup']],
+  ['Tuchel’s back-three setup vs Leverkusen wing-backs','Sep 08, 2026 · 16:30',82,15,['Bayern','Leverkusen','Bundesliga']],
+  ['Inter’s 3-5-2 rest defence against Madrid transitions','Aug 30, 2026 · 20:55',68,24,['Inter','Real Madrid','Champions League']],
+  ['Brighton build-up vs Liverpool’s mid-block trap','Aug 21, 2026 · 12:10',79,12,['Brighton','Liverpool','Premier League']],
+];
+const CHIPS = ['Arsenal high-press vs City','France 2022 Final xG','Tuchel setup vs Leverkusen'];
+const X = i => 40 + i * (580 / 3);
+const Y = v => 130 - v * 110;
+
+class Component extends DCLogic {
+  state = { tab: 'arena', query: '', topic: HISTORY[0][0], cursor: 6, playing: false, search: '', hover: null, copied: false };
+  componentWillUnmount() { clearInterval(this.timer); }
+  speed() { return { Slow: 2600, Normal: 1700, Fast: 900 }[this.props.playbackSpeed ?? 'Normal'] || 1700; }
+  play() {
+    clearInterval(this.timer);
+    if (this.state.cursor >= MSGS.length) this.setState({ cursor: 0 });
+    this.setState({ playing: true });
+    this.timer = setInterval(() => {
+      this.setState(s => {
+        const c = s.cursor + 1;
+        if (c >= MSGS.length) { clearInterval(this.timer); return { cursor: MSGS.length, playing: false }; }
+        return { cursor: c };
+      });
+    }, this.speed());
+  }
+  pause() { clearInterval(this.timer); this.setState({ playing: false }); }
+  load(topic, cursor, autoplay) {
+    this.pause();
+    this.setState({ topic, cursor, tab: 'arena' }, () => { if (autoplay) this.play(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  }
+  renderVals() {
+    const s = this.state;
+    const round = s.cursor === 0 ? 1 : MSGS[s.cursor - 1][0];
+    const lastAgent = s.cursor > 0 ? MSGS[s.cursor - 1][1] : null;
+    const nextAgent = s.cursor < MSGS.length ? MSGS[s.cursor][1] : null;
+    const spoken = new Set(MSGS.slice(0, s.cursor).map(m => m[1]));
+    const consensus = s.cursor === 0 ? 0 : CONS[round - 1];
+    const tabDefs = [['arena','Arena','ph ph-chats-teardrop'],['history','History','ph ph-clock-counter-clockwise'],['intel','Intelligence','ph ph-chart-polar'],['devops','DevOps','ph ph-cpu']];
+    const q = s.search.trim().toLowerCase();
+    const hist = HISTORY.filter(h => !q || [h[0], h[1], ...h[4]].join(' ').toLowerCase().includes(q));
+    const smooth = pts => pts.map((v, i) => i === 0 ? `M${X(0)},${Y(v)}` : `C${(X(i-1)+X(i))/2},${Y(pts[i-1])} ${(X(i-1)+X(i))/2},${Y(v)} ${X(i)},${Y(v)}`).join(' ');
+    return {
+      tabs: tabDefs.map(([id, label, icon]) => {
+        const on = s.tab === id;
+        return { label, icon, go: () => this.setState({ tab: id }),
+          bg: on ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
+          border: on ? 'color-mix(in srgb, var(--color-accent) 55%, transparent)' : 'transparent',
+          color: on ? 'var(--color-accent-100)' : 'var(--color-neutral-400)' };
+      }),
+      isArena: s.tab === 'arena', isHistory: s.tab === 'history', isIntel: s.tab === 'intel', isDevops: s.tab === 'devops',
+      query: s.query,
+      onQuery: e => this.setState({ query: e.target.value }),
+      onQueryKey: e => { if (e.key === 'Enter') this.load(s.query.trim() || HISTORY[0][0], 0, true); },
+      start: () => this.load(s.query.trim() || HISTORY[0][0], 0, true),
+      chips: CHIPS.map(label => ({ label, pick: () => this.setState({ query: label }) })),
+      topic: s.topic, consensus, consensusW: consensus + '%',
+      roundLabel: s.cursor === 0 ? 'Awaiting opening statements' : `Round ${round} of 3`,
+      agentChips: Object.entries(AGENTS).map(([id, a]) => {
+        const speaking = s.playing ? id === nextAgent : id === lastAgent;
+        const done = spoken.has(id);
+        return { ...a,
+          dot: speaking ? 'var(--color-accent)' : done ? 'var(--color-accent-700)' : 'var(--color-neutral-700)',
+          glow: speaking ? '0 0 10px var(--color-accent)' : 'none',
+          border: speaking ? 'color-mix(in srgb, var(--color-accent) 55%, transparent)' : 'var(--color-divider)',
+          bg: speaking ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)' : 'color-mix(in srgb, var(--color-surface) 40%, transparent)' };
+      }),
+      rounds: [1, 2, 3].map(r => {
+        const on = s.cursor > 0 && r === round;
+        return { label: `Round ${r}`, go: () => { this.pause(); this.setState({ cursor: MSGS.filter(m => m[0] <= r).length }); },
+          bg: on ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
+          border: on ? 'var(--color-accent)' : 'var(--color-divider)',
+          color: on ? 'var(--color-accent-100)' : 'var(--color-neutral-400)' };
+      }),
+      prev: () => { this.pause(); this.setState(x => ({ cursor: Math.max(0, x.cursor - 1) })); },
+      next: () => { this.pause(); this.setState(x => ({ cursor: Math.min(MSGS.length, x.cursor + 1) })); },
+      togglePlay: () => s.playing ? this.pause() : this.play(),
+      playIcon: s.playing ? 'ph ph-pause' : 'ph ph-play',
+      playLabel: s.playing ? 'Pause' : 'Play Live',
+      progressLabel: `${s.cursor}/${MSGS.length}`,
+      isEmpty: s.cursor === 0 && !s.playing,
+      composing: s.playing && nextAgent,
+      composingLabel: nextAgent ? `${AGENTS[nextAgent].name} is composing…` : '',
+      showTelemetry: this.props.showTelemetry ?? true,
+      visible: MSGS.slice(0, s.cursor).map((m, i) => {
+        const pro = m[2] >= 0;
+        return { agent: AGENTS[m[1]].name, icon: AGENTS[m[1]].icon, text: m[3],
+          time: `21:${String(14 + i).padStart(2, '0')}:${String((i * 17) % 60).padStart(2, '0')}`,
+          roundStart: i === 0 || MSGS[i - 1][0] !== m[0], roundName: `Round ${m[0]}`,
+          stanceLabel: `${pro ? '+' : '−'}${Math.abs(m[2]).toFixed(2)} ${pro ? 'PRO' : 'CON'}`,
+          stanceBg: pro ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
+          stanceBorder: pro ? 'color-mix(in srgb, var(--color-accent) 50%, transparent)' : 'var(--color-neutral-600)',
+          stanceColor: pro ? 'var(--color-accent-200)' : 'var(--color-neutral-300)',
+          tele: m[4].map(([k, v]) => ({ k, v })) };
+      }),
+      search: s.search, onSearch: e => this.setState({ search: e.target.value }),
+      historyCount: `${hist.length} of ${HISTORY.length}`, historyEmpty: hist.length === 0,
+      historyItems: hist.map(h => ({ title: h[0], date: h[1], cons: h[2], msgs: h[3], tags: h[4], resume: () => this.load(h[0], 0, true) })),
+      gridLines: [1, 0.5, 0, -0.5, -1].map(v => ({ y: Y(v), ty: Y(v) + 4, label: v > 0 ? '+' + v : String(v), dash: v === 0 ? '0' : '3 5' })),
+      roundTicks: [0, 1, 2, 3].map(i => ({ x: X(i), label: `R${i}` })),
+      trajectories: Object.entries(TRAJ).map(([id, pts]) => ({ name: AGENTS[id].name, d: smooth(pts), endY: Y(pts[3]), color: TRAJ_COLORS[id],
+        w: s.hover === id ? 3.5 : 2, op: s.hover && s.hover !== id ? 0.18 : 1, hover: () => this.setState({ hover: id }) })),
+      clearHover: () => this.setState({ hover: null }),
+      influence: INFL.map(([id, pct], i) => ({ rank: i + 1, name: AGENTS[id].name, icon: AGENTS[id].icon, pct, w: (pct / 34 * 100) + '%',
+        bar: i === 0 ? 'linear-gradient(90deg, var(--color-accent-700), var(--color-accent))' : 'var(--color-neutral-600)' })),
+      services: [
+        { name: 'FastAPI', icon: 'ph ph-lightning', metric: ':8000', sub: 'REST gateway · 12ms p50' },
+        { name: 'pgvector', icon: 'ph ph-database', metric: ':5432', sub: 'Postgres 16 · embeddings store' },
+        { name: 'Vector search', icon: 'ph ph-graph', metric: '1.4ms', sub: 'Median similarity query latency' },
+      ],
+      copy: () => { navigator.clipboard?.writeText('curl http://localhost:8000/health | jq'); this.setState({ copied: true }); setTimeout(() => this.setState({ copied: false }), 1600); },
+      copyIcon: s.copied ? 'ph ph-check' : 'ph ph-copy',
+      copyLabel: s.copied ? 'Copied' : 'Copy command',
+    };
+  }
+}
+</script>
+</body>
+</html>
