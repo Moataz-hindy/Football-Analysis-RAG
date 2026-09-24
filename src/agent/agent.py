@@ -165,9 +165,11 @@ class Agent:
                     tool_calls.append(call)
                     try:
                         call.result = self.tools.execute(call.name, call.arguments)
+                        call.status = "success"
                     except Exception as error:
                         call.status = "failed"
                         call.error = str(error)
+                        call.result = None
                         raise
                     messages.append({"role": "tool", "name": call.name,
                                      "content": str(call.result)})

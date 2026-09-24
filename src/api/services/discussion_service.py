@@ -366,7 +366,7 @@ def get_discussion_status_record(
         status = "failed"
         message = "Saved discussion failed or was interrupted."
 
-    elif saved_status == "completed":
+    elif saved_status == "completed" or (saved_status is None and not discussion.metadata.errors):
         status = "completed"
         message = "Saved discussion completed."
 

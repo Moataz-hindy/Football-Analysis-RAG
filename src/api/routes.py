@@ -48,31 +48,21 @@ async def root():
 
 
 # ── Curated Predefined Topics ──
-CURATED_TOPICS = [
+CURATED_TOPICS: list[TopicItem] = [
+    TopicItem(
+        id="argentina-france-2022",
+        label="Argentina vs France (2022 World Cup Final)",
+        description="Scaloni's tactical switch of Di María to the left flank vs France's late physical transitions.",
+    ),
     TopicItem(
         id="japan-spain-2022",
         label="Japan's 5-4-1 Low Block vs Spain (2022 World Cup)",
-        description="Tactical and performance analysis of Japan's defensive structure and counter-attacking efficiency against Spain.",
+        description="Tactical and performance analysis of Japan's compact 5-4-1 defensive structure and rapid transitions against Spain.",
     ),
     TopicItem(
-        id="argentina-france-2022",
-        label="Was France Unlucky in the 2022 World Cup Final?",
-        description="Evaluating refereeing decisions, momentum shifts, and tactical changes in the 2022 World Cup Final.",
-    ),
-    TopicItem(
-        id="arsenal-striker-dilemma",
-        label="Should Arsenal Sign a Proven Striker in January?",
-        description="Statistical and financial analysis comparing Havertz/Jesus with elite central strikers.",
-    ),
-    TopicItem(
-        id="egypt-argentina-officiating",
-        label="Did Argentina Win Against Egypt Because of Match Officials?",
-        description="Multi-angle debate covering controversial refereeing calls, statistical xG disparity, and tactical game state.",
-    ),
-    TopicItem(
-        id="tuchel-bayern-tactics",
-        label="Tuchel's Tactical Setup vs Leverkusen: Masterclass or Collapse?",
-        description="Analyzing Bayer Leverkusen's 3-0 victory against Bayern Munich and Tuchel's sudden back-three formation.",
+        id="netherlands-argentina-2022",
+        label="Netherlands vs Argentina (2022 World Cup Quarter-Final)",
+        description="Van Gaal's direct Route-One aerial overload vs Argentina's defensive rest structure.",
     ),
 ]
 

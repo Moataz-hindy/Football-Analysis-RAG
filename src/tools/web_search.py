@@ -171,9 +171,8 @@ class WebSearchTool(ToolInterface):
                         time.sleep(1.0)
                         continue
                     raise
-
             if not results:
-                return "No web search results found."
+                return f"No external web search results found for '{query}'. Proceed with tactical match analysis."
             formatted = []
             for r in results:
                 title = r.get("title", "")

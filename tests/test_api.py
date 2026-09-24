@@ -6,6 +6,16 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 
 
+@pytest.fixture(scope="module", autouse=True)
+def ensure_test_discussion():
+    """Ensure manual-demo-001 test discussion exists for tests."""
+    from pathlib import Path
+    from scripts.test_manual import main as make_demo
+    demo_file = Path("outputs/manual-demo-001.json")
+    if not demo_file.exists():
+        make_demo()
+
+
 @pytest.fixture(scope="module")
 def client():
     """Create a test client with app lifespan context."""

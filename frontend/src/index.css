@@ -614,3 +614,181 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* ══════════════════════════════════════════════════
+   Motion system — tab transitions, card entrances, pitch animations
+   Short, ease-out curves keep everything snappy.
+══════════════════════════════════════════════════ */
+:root {
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.view-enter {
+  animation: view-enter 260ms var(--ease-out-expo) both;
+}
+
+@keyframes fade-swap {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-swap {
+  animation: fade-swap 220ms var(--ease-out-expo) both;
+}
+
+/* Staggered entrance for cards; set animation-delay inline per item */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.card-enter {
+  animation: card-enter 340ms var(--ease-out-expo) both;
+}
+
+/* Agent speech cards — accent rail + tinted glow in the speaker's colour (--agent-color) */
+.speech-card {
+  transition: transform 200ms var(--ease-out-expo), border-color 200ms ease, box-shadow 200ms ease;
+}
+.speech-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--agent-color, #00f59b);
+  box-shadow: 0 0 10px var(--agent-color, #00f59b);
+  transform: scaleY(0.25);
+  opacity: 0.35;
+  transition: transform 260ms var(--ease-out-expo), opacity 200ms ease;
+}
+.speech-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px color-mix(in srgb, var(--agent-color, #00f59b) 30%, transparent);
+}
+.speech-card:hover::before {
+  transform: scaleY(1);
+  opacity: 1;
+}
+.speech-card .speech-avatar {
+  transition: transform 260ms var(--ease-spring);
+}
+.speech-card:hover .speech-avatar {
+  transform: rotate(-6deg) scale(1.06);
+}
+
+/* Metric tiles */
+.metric-tile {
+  transition: transform 200ms var(--ease-out-expo), background-color 200ms ease, box-shadow 200ms ease;
+}
+.metric-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px -12px rgba(0, 0, 0, 0.9);
+}
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bar-grow {
+  transform-origin: left center;
+  animation: bar-grow 700ms var(--ease-out-expo) both;
+}
+@keyframes tick-flash {
+  0% { color: #ffffff; text-shadow: 0 0 10px rgba(0, 245, 155, 0.8); }
+  100% { text-shadow: 0 0 0 transparent; }
+}
+.tick-flash {
+  animation: tick-flash 600ms ease-out;
+}
+
+/* Tactical pitch */
+@keyframes lane-flow {
+  to { stroke-dashoffset: -32; }
+}
+.pitch-lane-flow {
+  animation: lane-flow 1.8s linear infinite;
+}
+.pitch-dash-drift {
+  animation: lane-flow 4s linear infinite;
+}
+@keyframes press-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.75; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+.pitch-press {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: press-pulse 3.2s ease-in-out infinite;
+}
+@keyframes orbit {
+  to { transform: rotate(360deg); }
+}
+.pitch-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: orbit 12s linear infinite;
+}
+@keyframes node-ping {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.pitch-node-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: node-ping 1.6s var(--ease-out-expo) infinite;
+}
+.pitch-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 220ms var(--ease-spring);
+}
+.pitch-node.is-active {
+  transform: scale(1.18);
+}
+@keyframes tooltip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.pitch-tooltip {
+  animation: tooltip-in 160ms ease-out both;
+  transition: left 200ms var(--ease-out-expo), top 200ms var(--ease-out-expo);
+}
+
+/* Chart line draw-in (paths carry pathLength="1") */
+@keyframes path-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.path-draw {
+  stroke-dasharray: 1;
+  animation: path-draw 900ms var(--ease-out-expo) both;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in-late {
+  animation: fade-in 300ms ease-out 650ms both;
+}
+@keyframes gauge-sweep {
+  from { stroke-dasharray: 0 100; }
+}
+.gauge-sweep {
+  animation: gauge-sweep 900ms var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-enter, .path-draw, .fade-in-late, .gauge-sweep, .fade-swap, .card-enter, .bar-grow, .tick-flash, .pitch-tooltip,
+  .pitch-lane-flow, .pitch-dash-drift, .pitch-press, .pitch-orbit, .pitch-node-ping {
+    animation: none !important;
+  }
+  .speech-card, .metric-tile, .pitch-node, .speech-card .speech-avatar {
+    transition: none !important;
+  }
+  .speech-card:hover, .metric-tile:hover { transform: none; }
+}

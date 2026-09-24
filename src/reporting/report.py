@@ -192,22 +192,11 @@ def generate_markdown_report(
     topic = analytics_data.get("topic", "Multi-Agent Deliberation")
     metadata = analytics_data.get("metadata", {})
 
-    lines.append(f"| **Stance Scoring Method** | `{scoring_method}` (Cached reuse: `{scores_reused}`) | Verified integrity |")
-    lines.append("")
-
-    lines.extend(
-        _render_key_insights(analytics_data.get("key_insights"))
-    )
-
-
     # Extract Category 1: Opinion Trajectories
     task1 = analytics_data.get("task1_opinion_trajectories", {})
     agent_ids = task1.get("agent_ids", [])
     trajectories = task1.get("trajectories", {})
     total_rounds = task1.get("total_rounds", 3)
-
-    lines.append("---")
-    lines.append("## 1. Opinion Dynamics & Stance Evolution")
 
 
     # Extract Category 2: Agreement
@@ -316,6 +305,8 @@ def generate_markdown_report(
     scores_reused = metadata.get("scores_reused", False)
     lines.append(f"| **Stance Scoring Method** | `{scoring_method}` (Cached reuse: `{scores_reused}`) | Verified integrity |")
     lines.append("")
+
+    lines.extend(_render_key_insights(analytics_data.get("key_insights")))
 
     # ─────────────────────────────────────────────────────────────────────
     # Category 1: Opinion Dynamics & Stance Evolution
