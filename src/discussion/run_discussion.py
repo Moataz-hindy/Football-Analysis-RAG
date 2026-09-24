@@ -123,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
     agents: dict[str, Agent] = {}
     persona_files: dict[str, str] = {}
 
+    manifest: dict = {}
+
     if args.dynamic_personas:
         from src.agent.persona_generator import generate_personas_for_topic
         from src.discussion.graph import DiscussionGraph
@@ -183,11 +185,21 @@ def main(argv: list[str] | None = None) -> int:
 
     started = time.monotonic()
 
+    extra_meta = {}
+    if args.dynamic_personas:
+        extra_meta["dynamic_personas"] = True
+        if manifest:
+            extra_meta["camps"] = manifest
+
     def checkpoint(state):
         save_discussion_from_state(
             state=state, router=router, output_dir=args.output_dir, llm=llm,
-            config_metadata={"persona_files": persona_files,
-                             "retrieval": "week1_pgvector_k6", "status": "running"},
+            config_metadata={
+                "persona_files": persona_files,
+                "retrieval": "week1_pgvector_k6",
+                "status": "running",
+                **extra_meta,
+            },
             duration_seconds=time.monotonic() - started,
         )
 
@@ -224,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
                 "persona_files": persona_files,
                 "retrieval": "week1_pgvector_k6",
                 "status": "interrupted" if isinstance(error.__cause__, KeyboardInterrupt) else "failed_partial",
+                **extra_meta,
             },
             duration_seconds=time.monotonic() - started,
             errors=errors,
@@ -242,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
             "persona_files": persona_files,
             "retrieval": "week1_pgvector_k6",
             "status": "completed",
+            **extra_meta,
         },
         duration_seconds=elapsed,
         errors=errors,

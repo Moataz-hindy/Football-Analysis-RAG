@@ -48,6 +48,9 @@ class MessageOut(BaseModel):
 class AgentInfo(BaseModel):
     agent_id: str
     persona_file: str = ""
+    name: str = ""
+    role: str = ""
+    camp: str = ""
 
 
 class DiscussionDetailResponse(BaseModel):
@@ -58,6 +61,7 @@ class DiscussionDetailResponse(BaseModel):
     graph: dict[str, list[str]] = Field(default_factory=dict)
     messages: list[MessageOut]
     timestamp: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Start Discussion ──
@@ -67,6 +71,14 @@ class StartDiscussionRequest(BaseModel):
     discussion_id: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    dynamic_personas: bool = Field(
+        default=True,
+        description="Whether to generate dynamic 3v3 polarized personas via LLM.",
+    )
+    force_regenerate: bool = Field(
+        default=False,
+        description="Force regeneration of dynamic personas if cached.",
     )
 
 

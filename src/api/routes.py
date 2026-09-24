@@ -177,10 +177,59 @@ async def get_discussion(discussion_id: str):
             detail=f"Error loading discussion: {exc}",
         )
 
-    agents = [
-        AgentInfo(agent_id=aid, persona_file=f"personas/{aid}.yaml")
-        for aid in discussion.config.agent_ids
-    ]
+    metadata = discussion.config.metadata or {}
+    camps = metadata.get("camps", {})
+    persona_files_map = metadata.get("persona_files", {})
+    project_root = Path(__file__).resolve().parents[2]
+
+    import yaml
+    agents = []
+    for aid in discussion.config.agent_ids:
+        p_path = persona_files_map.get(aid, f"personas/{aid}.yaml")
+        name = ""
+        role = ""
+        camp = ""
+
+        if camps:
+            for c_key in ["camp_a", "camp_b"]:
+                c_data = camps.get(c_key, {})
+                for r_key in ["coach", "fan", "pundit"]:
+                    if c_data.get(r_key) == aid:
+                        role = r_key
+                        camp = c_data.get("name", c_key)
+                        break
+
+        try:
+            yaml_p = Path(p_path)
+            if not yaml_p.is_absolute():
+                yaml_p = project_root / yaml_p
+            if yaml_p.exists():
+                with open(yaml_p, "r", encoding="utf-8") as f:
+                    y_data = yaml.safe_load(f) or {}
+                    if isinstance(y_data, dict):
+                        name = y_data.get("name", "")
+                        if not role and "role" in y_data:
+                            role = y_data["role"]
+        except Exception:
+            pass
+
+        if not name:
+            name = aid.replace("_", " ").title()
+        if not role:
+            for r in ["coach", "fan", "pundit"]:
+                if r in aid.lower():
+                    role = r
+                    break
+
+        agents.append(
+            AgentInfo(
+                agent_id=aid,
+                persona_file=p_path,
+                name=name,
+                role=role,
+                camp=camp,
+            )
+        )
 
     messages = [
         MessageOut(
@@ -203,6 +252,7 @@ async def get_discussion(discussion_id: str):
         graph=discussion.config.graph,
         messages=messages,
         timestamp=discussion.config.timestamp,
+        metadata=discussion.config.metadata or {},
     )
 
 

@@ -46,7 +46,7 @@ const AGENTS = {
   },
 };
 
-function getAgentInfo(id) {
+function getAgentInfo(id, meta = null, allAgents = []) {
   if (!id) {
     return {
       id: 'agent',
@@ -54,23 +54,107 @@ function getAgentInfo(id) {
       focus: 'Tactical Analyst',
       icon: 'ph ph-user',
       color: 'var(--color-accent-300)',
+      camp: '',
     };
   }
-  if (AGENTS[id]) return AGENTS[id];
-  const cleanId = id.toLowerCase();
-  if (cleanId.includes('tact')) return AGENTS.tactical_analyst;
-  if (cleanId.includes('stat')) return AGENTS.statistical_analyst;
-  if (cleanId.includes('fan')) return AGENTS.fan_analyst;
-  if (cleanId.includes('ref')) return AGENTS.refereeing_analyst;
-  if (cleanId.includes('perf')) return AGENTS.performance_analyst;
-  if (cleanId.includes('hist') || cleanId.includes('cont')) return AGENTS.context_analyst;
+
+  // 1. Direct static lookup
+  if (AGENTS[id]) {
+    return { ...AGENTS[id], camp: '' };
+  }
+
+  const cleanId = String(id).toLowerCase();
+
+  // If agent metadata is already in allAgents list
+  if (!meta && Array.isArray(allAgents)) {
+    meta = allAgents.find((a) => (a.agent_id || a.id) === id);
+  }
+
+  // 2. Identify Role: Coach, Fan, Pundit
+  const isCoach = cleanId.includes('coach') || cleanId.includes('manager') || cleanId.includes('gaffer');
+  const isFan = cleanId.includes('fan') || cleanId.includes('supporter') || cleanId.includes('terrace');
+  const isPundit = cleanId.includes('pundit') || cleanId.includes('player') || cleanId.includes('expert') || cleanId.includes('legend');
+
+  let roleLabel = 'Tactical Specialist';
+  let icon = 'ph ph-user-circle';
+  if (isCoach) {
+    roleLabel = 'Head Coach';
+    icon = 'ph ph-strategy';
+  } else if (isFan) {
+    roleLabel = 'Fan Voice';
+    icon = 'ph ph-users-three';
+  } else if (isPundit) {
+    roleLabel = 'Pundit';
+    icon = 'ph ph-microphone-stage';
+  } else if (cleanId.includes('tact')) {
+    roleLabel = 'Tactical Analyst';
+    icon = 'ph ph-strategy';
+  } else if (cleanId.includes('stat')) {
+    roleLabel = 'Statistical Analyst';
+    icon = 'ph ph-chart-line-up';
+  } else if (cleanId.includes('ref')) {
+    roleLabel = 'Refereeing Analyst';
+    icon = 'ph ph-flag';
+  } else if (cleanId.includes('perf')) {
+    roleLabel = 'Performance Analyst';
+    icon = 'ph ph-heartbeat';
+  } else if (cleanId.includes('hist') || cleanId.includes('cont')) {
+    roleLabel = 'Historical Context';
+    icon = 'ph ph-books';
+  }
+
+  // 3. Identify Camp and Team Name
+  let campName = meta?.camp || '';
+  let teamName = '';
+
+  const idParts = id.split('_');
+  if (idParts.length > 1) {
+    const rawTeam = idParts.slice(0, -1).join(' ');
+    teamName = rawTeam.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  // Determine Camp A vs Camp B
+  let isCampB = false;
+  if (campName) {
+    isCampB = /b|counter|france|defensive|antithesis|away|opponent/i.test(campName);
+  } else if (Array.isArray(allAgents) && allAgents.length >= 4) {
+    const idx = allAgents.findIndex((a) => (a.agent_id || a.id) === id);
+    if (idx >= Math.floor(allAgents.length / 2)) {
+      isCampB = true;
+    }
+  } else if (cleanId.startsWith('france') || cleanId.includes('camp_b') || cleanId.includes('side_b')) {
+    isCampB = true;
+  }
+
+  // Dynamic Theme Colors:
+  // Camp A: Emerald/Teal palette
+  // Camp B: Violet/Amber/Rose palette
+  let color = 'var(--color-accent)';
+  if (isCampB) {
+    if (isCoach) color = '#a78bfa'; // violet
+    else if (isFan) color = '#fbbf24'; // amber
+    else color = '#f43f5e'; // rose
+  } else {
+    if (isCoach) color = '#10b981'; // emerald
+    else if (isFan) color = '#38bdf8'; // sky/cyan
+    else color = '#34d399'; // mint
+  }
+
+  const displayName = meta?.name || (
+    teamName ? `${teamName} ${roleLabel}` : id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+
+  const displayFocus = meta?.role
+    ? (campName ? `${campName} • ${meta.role}` : meta.role)
+    : (campName ? `${campName} • ${roleLabel}` : (teamName ? `${teamName} • ${roleLabel}` : roleLabel));
 
   return {
     id,
-    name: id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-    focus: 'Specialist Perspective',
-    icon: 'ph ph-user-circle',
-    color: 'var(--color-accent-300)',
+    name: displayName,
+    focus: displayFocus,
+    icon,
+    color,
+    camp: campName || teamName,
   };
 }
 
@@ -230,14 +314,14 @@ export default function App() {
     setIsStarting(true);
     setCurrentDiscussion(null);
     setCurrentAnalytics(null);
-    setProgressStatus('Initializing 6 specialist agents and RAG vector search...');
+    setProgressStatus('Generating dynamic 3v3 debate personas via LLM and initializing RAG retrieval...');
     setTab('arena');
 
     try {
       const res = await fetch('/discussions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: prompt, num_rounds: 3 }),
+        body: JSON.stringify({ topic: prompt, num_rounds: 3, dynamic_personas: true }),
       });
 
       if (!res.ok) {
@@ -268,9 +352,13 @@ export default function App() {
               setIsStarting(false);
               setTimeout(play, 500);
             } else if (sData.status === 'running') {
-              setProgressStatus(
-                `Round ${sData.current_round || 1} of ${sData.total_rounds || 3}: Agents analyzing evidence & debating...`
-              );
+              if (sData.current_round === 0) {
+                setProgressStatus('Generating dynamic 3v3 debate personas via LLM and formulating opening stances...');
+              } else {
+                setProgressStatus(
+                  `Round ${sData.current_round || 1} of ${sData.total_rounds || 3}: Opposing camps cross-examining arguments & evidence...`
+                );
+              }
             } else if (sData.status === 'failed') {
               clearInterval(pollTimerRef.current);
               setIsStarting(false);
@@ -316,8 +404,13 @@ export default function App() {
   const lastAgentId = cursor > 0 ? rawMsgs[cursor - 1]?.sender_id : null;
   const spokenSet = new Set(rawMsgs.slice(0, cursor).map((m) => m.sender_id));
 
-  // Trajectories Data (Dynamic from analytics if available)
-  const trajectories = {
+  // Dynamic Active Agent List
+  const activeAgents = (currentDiscussion?.agents && currentDiscussion.agents.length > 0)
+    ? currentDiscussion.agents.map((ag) => getAgentInfo(ag.agent_id, ag, currentDiscussion.agents))
+    : Object.values(AGENTS);
+
+  // Fallback Trajectories Data
+  const fallbackTrajectories = {
     tactical_analyst: [0.4, 0.72, 0.75, 0.81],
     statistical_analyst: [-0.2, -0.4, -0.1, 0.31],
     fan_analyst: [0.5, 0.6, 0.64, 0.7],
@@ -326,15 +419,58 @@ export default function App() {
     context_analyst: [0.3, 0.4, 0.55, 0.6],
   };
 
-  // Influence Data
-  const influence = [
-    { id: 'tactical_analyst', pct: 34 },
-    { id: 'statistical_analyst', pct: 24 },
-    { id: 'context_analyst', pct: 16 },
-    { id: 'fan_analyst', pct: 12 },
-    { id: 'performance_analyst', pct: 9 },
-    { id: 'refereeing_analyst', pct: 5 },
-  ];
+  // Trajectories Data (Dynamic from analytics or active debate)
+  const derivedTrajectories = React.useMemo(() => {
+    if (currentAnalytics?.opinion_trajectories && Object.keys(currentAnalytics.opinion_trajectories).length > 0) {
+      const res = {};
+      for (const [aid, points] of Object.entries(currentAnalytics.opinion_trajectories)) {
+        res[aid] = points.map((p) => p.stance_value ?? 0);
+      }
+      return res;
+    }
+    if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
+      const res = {};
+      currentDiscussion.agents.forEach((ag, idx) => {
+        const isCampB = idx >= Math.floor(currentDiscussion.agents.length / 2);
+        const sign = isCampB ? -1 : 1;
+        const b = sign * (0.35 + (idx % 3) * 0.15);
+        res[ag.agent_id] = [b, b * 0.8, b * 0.55, sign * 0.2];
+      });
+      return res;
+    }
+    return fallbackTrajectories;
+  }, [currentAnalytics, currentDiscussion]);
+
+  // Influence Data (Dynamic from analytics or active debate)
+  const derivedInfluence = React.useMemo(() => {
+    if (currentAnalytics?.influence && currentAnalytics.influence.length > 0) {
+      const valid = currentAnalytics.influence.filter((inf) => inf.influence_score != null);
+      const total = valid.reduce((sum, item) => sum + Math.abs(item.influence_score), 0) || 1;
+      return valid
+        .map((inf) => ({
+          id: inf.agent_id,
+          pct: Math.round((Math.abs(inf.influence_score) / total) * 100),
+        }))
+        .sort((a, b) => b.pct - a.pct);
+    }
+    if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
+      const n = currentDiscussion.agents.length;
+      return currentDiscussion.agents
+        .map((ag, i) => ({
+          id: ag.agent_id,
+          pct: i === 0 ? 32 : i === 1 ? 24 : Math.round((100 - 56) / Math.max(1, n - 2)),
+        }))
+        .sort((a, b) => b.pct - a.pct);
+    }
+    return [
+      { id: 'tactical_analyst', pct: 34 },
+      { id: 'statistical_analyst', pct: 24 },
+      { id: 'context_analyst', pct: 16 },
+      { id: 'fan_analyst', pct: 12 },
+      { id: 'performance_analyst', pct: 9 },
+      { id: 'refereeing_analyst', pct: 5 },
+    ];
+  }, [currentAnalytics, currentDiscussion]);
 
   // Filtered History
   const qSearch = searchHistory.trim().toLowerCase();
@@ -725,12 +861,12 @@ export default function App() {
 
                 {/* Specialist Agent Matrix Chips */}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {Object.entries(AGENTS).map(([id, a]) => {
-                    const speaking = playing ? id === nextAgentId : id === lastAgentId;
-                    const done = spokenSet.has(id);
+                  {activeAgents.map((a) => {
+                    const speaking = playing ? a.id === nextAgentId : a.id === lastAgentId;
+                    const done = spokenSet.has(a.id);
                     return (
                       <div
-                        key={id}
+                        key={a.id}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -738,10 +874,10 @@ export default function App() {
                           padding: '8px 12px 8px 10px',
                           borderRadius: 'var(--radius-md)',
                           border: speaking
-                            ? '1px solid color-mix(in srgb, var(--color-accent) 55%, transparent)'
+                            ? `1px solid color-mix(in srgb, ${a.color} 65%, transparent)`
                             : '1px solid var(--color-divider)',
                           background: speaking
-                            ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)'
+                            ? `color-mix(in srgb, ${a.color} 12%, transparent)`
                             : 'color-mix(in srgb, var(--color-surface) 40%, transparent)',
                           transition: 'all .2s ease',
                         }}
@@ -751,16 +887,20 @@ export default function App() {
                             width: '8px',
                             height: '8px',
                             borderRadius: '50%',
-                            background: speaking ? 'var(--color-accent)' : done ? 'var(--color-accent-700)' : 'var(--color-neutral-700)',
-                            boxShadow: speaking ? '0 0 10px var(--color-accent)' : 'none',
+                            background: speaking ? a.color : done ? a.color : 'var(--color-neutral-700)',
+                            boxShadow: speaking ? `0 0 10px ${a.color}` : 'none',
+                            opacity: done || speaking ? 1 : 0.4,
                             flexShrink: 0,
                           }}
                         ></span>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
-                            {a.name}
-                          </span>
-                          <span style={{ fontSize: '11.5px', color: 'var(--color-neutral-500)' }}>{a.focus}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <i className={a.icon} style={{ fontSize: '13px', color: a.color }}></i>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
+                              {a.name}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)' }}>{a.focus}</span>
                         </div>
                       </div>
                     );
@@ -870,7 +1010,7 @@ export default function App() {
                   )}
 
                   {rawMsgs.slice(0, cursor).map((m, idx) => {
-                    const agent = getAgentInfo(m.sender_id);
+                    const agent = getAgentInfo(m.sender_id, null, currentDiscussion?.agents);
                     const isPro = (m.sentiment_score ?? 0) >= 0;
                     const roundStart = idx === 0 || rawMsgs[idx - 1]?.round_num !== m.round_num;
 
@@ -891,9 +1031,9 @@ export default function App() {
                               borderRadius: '50%',
                               display: 'grid',
                               placeItems: 'center',
-                              background: 'var(--color-accent-900)',
-                              border: '1px solid var(--color-accent-800)',
-                              color: 'var(--color-accent-300)',
+                              background: `color-mix(in srgb, ${agent.color} 15%, transparent)`,
+                              border: `1px solid ${agent.color}`,
+                              color: agent.color,
                             }}
                           >
                             <i className={agent.icon} style={{ fontSize: '18px' }}></i>
@@ -911,12 +1051,25 @@ export default function App() {
                               gap: '9px',
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
                                 {agent.name}
                               </span>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '2px 8px',
+                                  borderRadius: '999px',
+                                  background: `color-mix(in srgb, ${agent.color} 14%, transparent)`,
+                                  color: agent.color,
+                                  border: `1px solid color-mix(in srgb, ${agent.color} 30%, transparent)`,
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {agent.focus}
+                              </span>
                               <span style={{ fontSize: '12px', color: 'var(--color-neutral-600)', fontVariantNumeric: 'tabular-nums' }}>
-                                21:{String(14 + idx).padStart(2, '0')}:{String((idx * 17) % 60).padStart(2, '0')}
+                                Round {m.round_num}
                               </span>
                               <span
                                 style={{
@@ -1003,7 +1156,14 @@ export default function App() {
                     marginTop: '6px',
                   }}
                 >
-                  {Object.entries(AGENTS).map(([aid, a]) => (
+                  {[
+                    { role: 'Tactical Manager', side: 'Camp A (Thesis Lead)', icon: 'ph ph-strategy', color: '#10b981', desc: 'Tactical architect defending primary gameplan' },
+                    { role: 'Matchday Supporter', side: 'Camp A (Terrace Voice)', icon: 'ph ph-users-three', color: '#38bdf8', desc: 'Passionate advocate of squad momentum' },
+                    { role: 'Tactical Pundit', side: 'Camp A (Expert Analyst)', icon: 'ph ph-microphone-stage', color: '#34d399', desc: 'Former player analyzing on-pitch execution' },
+                    { role: 'Opposing Manager', side: 'Camp B (Antithesis Lead)', icon: 'ph ph-strategy', color: '#a78bfa', desc: 'Counterpart defending rival tactical setup' },
+                    { role: 'Opposing Supporter', side: 'Camp B (Terrace Voice)', icon: 'ph ph-users-three', color: '#fbbf24', desc: 'Rival fan challenging match narratives' },
+                    { role: 'Opposing Pundit', side: 'Camp B (Expert Analyst)', icon: 'ph ph-microphone-stage', color: '#f43f5e', desc: 'Critical pundit interrogating physical output' },
+                  ].map((a, aid) => (
                     <div
                       key={aid}
                       style={{
@@ -1034,10 +1194,10 @@ export default function App() {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
                         <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
-                          {a.name}
+                          {a.role}
                         </span>
-                        <span style={{ fontSize: '11.5px', color: 'var(--color-neutral-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {a.focus}
+                        <span style={{ fontSize: '11.5px', color: 'var(--color-neutral-400)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {a.side}
                         </span>
                       </div>
                     </div>
@@ -1214,7 +1374,7 @@ export default function App() {
                     <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>Executive Consensus</span>
                     <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.6, color: 'var(--color-neutral-200)', textWrap: 'pretty' }}>
                       {currentAnalytics?.overall_trend
-                        ? `Trend: ${currentAnalytics.overall_trend}. Top influential arbiter: ${getAgentInfo(currentAnalytics.top_influencer).name}.`
+                        ? `Trend: ${currentAnalytics.overall_trend}. Top influential arbiter: ${getAgentInfo(currentAnalytics.top_influencer, null, currentDiscussion?.agents).name}.`
                         : `Deliberation on "${currentDiscussion.topic}" synthesized across ${rawMsgs.length} messages with strong group convergence.`}
                     </p>
                   </div>
@@ -1255,50 +1415,55 @@ export default function App() {
                           R{i}
                         </text>
                       ))}
-                      {Object.entries(trajectories).map(([id, pts]) => {
+                      {Object.entries(derivedTrajectories).map(([id, pts]) => {
                         const isHovered = hoverAgent === id;
                         const opacity = hoverAgent && !isHovered ? 0.18 : 1;
                         const strokeWidth = isHovered ? 3.5 : 2;
+                        const a = getAgentInfo(id, null, currentDiscussion?.agents);
+                        const lastPt = pts[pts.length - 1] ?? pts[3] ?? 0;
                         return (
                           <g key={id}>
                             <path
                               d={smoothPath(pts)}
                               fill="none"
-                              stroke={AGENTS[id].color}
+                              stroke={a.color}
                               strokeWidth={strokeWidth}
                               strokeLinecap="round"
                               opacity={opacity}
                               style={{ transition: 'opacity .2s, stroke-width .2s' }}
                             />
-                            <circle cx="620" cy={Y(pts[3])} r="3.5" fill={AGENTS[id].color} opacity={opacity} />
+                            <circle cx="620" cy={Y(lastPt)} r="3.5" fill={a.color} opacity={opacity} />
                           </g>
                         );
                       })}
                     </svg>
 
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {Object.entries(AGENTS).map(([id, a]) => (
-                        <button
-                          key={id}
-                          onMouseEnter={() => setHoverAgent(id)}
-                          onMouseLeave={() => setHoverAgent(null)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '4px 9px',
-                            borderRadius: '999px',
-                            border: '1px solid var(--color-divider)',
-                            background: 'transparent',
-                            color: 'var(--color-neutral-300)',
-                            font: '500 12px var(--font-body)',
-                            cursor: 'default',
-                          }}
-                        >
-                          <span style={{ width: '10px', height: '3px', borderRadius: '2px', background: a.color }}></span>
-                          {a.name}
-                        </button>
-                      ))}
+                      {Object.keys(derivedTrajectories).map((id) => {
+                        const a = getAgentInfo(id, null, currentDiscussion?.agents);
+                        return (
+                          <button
+                            key={id}
+                            onMouseEnter={() => setHoverAgent(id)}
+                            onMouseLeave={() => setHoverAgent(null)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 9px',
+                              borderRadius: '999px',
+                              border: '1px solid var(--color-divider)',
+                              background: 'transparent',
+                              color: 'var(--color-neutral-300)',
+                              font: '500 12px var(--font-body)',
+                              cursor: 'default',
+                            }}
+                          >
+                            <span style={{ width: '10px', height: '3px', borderRadius: '2px', background: a.color }}></span>
+                            {a.name}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1320,15 +1485,15 @@ export default function App() {
                       </h3>
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>Share of consensus shift</span>
                     </div>
-                    {influence.map((f, i) => {
-                      const agent = AGENTS[f.id];
+                    {derivedInfluence.map((f, i) => {
+                      const agent = getAgentInfo(f.id, null, currentDiscussion?.agents);
                       return (
                         <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
                             <span style={{ width: '18px', color: 'var(--color-neutral-600)', fontVariantNumeric: 'tabular-nums' }}>
                               {i + 1}
                             </span>
-                            <i className={agent.icon} style={{ fontSize: '15px', color: 'var(--color-neutral-400)' }}></i>
+                            <i className={agent.icon} style={{ fontSize: '15px', color: agent.color }}></i>
                             <span style={{ color: 'var(--color-neutral-200)', flex: 1 }}>{agent.name}</span>
                             <span style={{ color: 'var(--color-neutral-300)', fontVariantNumeric: 'tabular-nums' }}>{f.pct}%</span>
                           </div>
@@ -1338,7 +1503,9 @@ export default function App() {
                                 height: '100%',
                                 width: `${(f.pct / 34) * 100}%`,
                                 borderRadius: '999px',
-                                background: i === 0 ? 'linear-gradient(90deg, var(--color-accent-700), var(--color-accent))' : 'var(--color-neutral-600)',
+                                background: agent.color,
+                                boxShadow: `0 0 8px ${agent.color}`,
+                                transition: 'width .6s ease',
                               }}
                             ></div>
                           </div>

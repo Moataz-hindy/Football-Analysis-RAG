@@ -180,13 +180,19 @@ def _execute_discussion(
     """Reuse the existing runner with explicit arguments."""
     from src.discussion.run_discussion import main as run_discussion
 
-    return run_discussion([
+    cmd = [
         "--discussion-id", discussion_id,
         "--topic", request.topic.strip(),
         "--rounds", str(request.num_rounds),
         "--output-dir", str(OUTPUTS_DIR),
         "--personas-dir", str(PROJECT_ROOT / "personas"),
-    ])
+    ]
+    if getattr(request, "dynamic_personas", True):
+        cmd.append("--dynamic-personas")
+    if getattr(request, "force_regenerate", False):
+        cmd.append("--force-regenerate")
+
+    return run_discussion(cmd)
 
 
 def _run_discussion_job(
