@@ -188,7 +188,15 @@ export default function App() {
     }
   });
 
-  const [tab, setTab] = useState('arena'); // 'arena' | 'history' | 'intel' | (isAdmin ? 'devops' : none)
+  const [tab, setTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('admin') === 'true' || params.get('admin') === '1') {
+        return 'devops';
+      }
+    } catch (_) {}
+    return 'arena';
+  });
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);

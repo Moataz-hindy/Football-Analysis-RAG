@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from starlette.concurrency import run_in_threadpool
@@ -41,9 +41,10 @@ router = APIRouter()
 
 # ── Root Redirect ──
 @router.get("/", include_in_schema=False)
-async def root():
-    """Redirect root to React frontend app."""
-    return RedirectResponse(url="/app/")
+async def root(request: Request):
+    """Redirect root to React frontend app preserving query params."""
+    target = f"/app/?{request.url.query}" if request.url.query else "/app/"
+    return RedirectResponse(url=target)
 
 
 
