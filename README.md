@@ -1,3 +1,12 @@
+---
+title: Football Analysis RAG
+emoji: ⚽
+colorFrom: green
+colorTo: indigo
+sdk: docker
+app_port: 8000
+---
+
 # Football Analysis RAG — Multi-Agent Discussion & Analytics Platform
 
 A **multi-agent discussion and analytics platform** built around football (soccer). The system ingests football knowledge, deploys persona-driven AI agents to debate football topics, and analyses the resulting discussions with measurable opinion dynamics, influence metrics, and automated reporting.
