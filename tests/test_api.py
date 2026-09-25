@@ -163,3 +163,14 @@ def test_cors_headers(client: TestClient):
     response = client.options("/health", headers=headers)
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_get_discussion_synthesis(client: TestClient):
+    """Test retrieving discussion synthesis endpoint."""
+    response = client.get("/discussions/manual-demo-001/synthesis")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tactical_verdict" in data
+    assert "executive_summary" in data
+    assert "agent_evaluations" in data
+

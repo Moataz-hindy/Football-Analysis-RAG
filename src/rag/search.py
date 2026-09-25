@@ -42,14 +42,18 @@ def get_client():
 
 def get_connection():
     try:
-        conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            port=os.environ.get("DB_PORT", "5432"),
-            dbname=os.environ.get("DB_NAME", "football_intelligence"),
-            user=os.environ.get("DB_USER", "postgres"),
-            password=os.environ.get("DB_PASSWORD"),
-            connect_timeout=10,
-        )
+        db_url = os.environ.get("DATABASE_URL")
+        if db_url:
+            conn = psycopg2.connect(db_url, connect_timeout=10)
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get("DB_HOST", "localhost"),
+                port=os.environ.get("DB_PORT", "5432"),
+                dbname=os.environ.get("DB_NAME", "football_intelligence"),
+                user=os.environ.get("DB_USER", "postgres"),
+                password=os.environ.get("DB_PASSWORD"),
+                connect_timeout=10,
+            )
     except psycopg2.OperationalError as e:
         raise RetrievalError("Could not connect to Postgres. Check database availability and DB settings.") from e
     try:

@@ -145,34 +145,36 @@ def score_snapshots_with_llm(topic, snapshots, llm_client=None, positive_pole=No
             {'role': 'user', 'content': prompt},
         ], tools=None)
         content = response.get('content', '') if isinstance(response, dict) else str(response)
-        content = re.sub(r'^```(?:json)?\s*|\s*```$', '', content.strip())
-        parsed = json.loads(content)
+        array_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
+        if array_match:
+            try:
+                parsed = json.loads(array_match.group(0))
+            except Exception:
+                cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', content.strip())
+                parsed = json.loads(cleaned)
+        else:
+            cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', content.strip())
+            parsed = json.loads(cleaned)
+
         if not isinstance(parsed, list):
             raise ValueError('Stance response must be an array')
         received = {}
         for item in parsed:
             if not isinstance(item, dict) or type(item.get('round_num')) is not int:
-                raise ValueError('Invalid stance record')
+                continue
             key = (item.get('agent_id'), item['round_num'])
+            if key not in expected or key in received:
+                continue
             value = item.get('stance_value')
-            
-            
-            if key not in expected:
-                raise ValueError(
-                    f"Model returned unexpected agent/round {key!r}; "
-                    f"expected one of {sorted(expected)!r}"
-                )
-            if key in received:
-                raise ValueError(f"Model repeated agent/round {key!r}")
-            if "stance_value" not in item:
-                raise ValueError(f"Model omitted stance_value for {key!r}")
-
-
             if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or not -1 <= value <= 1):
-                raise ValueError('Stance must be finite and between -1 and 1')
+                value = None
             received[key] = round(value, 4) if value is not None else None
-        if received.keys() != expected:
-            raise ValueError('Missing stance scores in LLM response')
+
+        # Fill any missing expected keys with None to avoid aborting the entire pipeline
+        for exp_key in expected:
+            if exp_key not in received:
+                received[exp_key] = None
+
         scores.update(received)
     return scores
 

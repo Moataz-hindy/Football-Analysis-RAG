@@ -212,6 +212,19 @@ def _run_discussion_job(
         exit_code = _execute_discussion(discussion_id, request)
 
         if exit_code == 0:
+            try:
+                _set_runtime_status(
+                    discussion_id,
+                    "running",
+                    total_rounds=request.num_rounds,
+                    current_round=request.num_rounds,
+                    message="Deliberation concluded. Precomputing intelligence analytics...",
+                )
+                from src.api.services.analytics_service import _load_or_compute_analytics
+                _load_or_compute_analytics(discussion_id)
+            except Exception as err:
+                logger.warning("Auto-precomputing analytics for %s failed: %s", discussion_id, err)
+
             _set_runtime_status(
                 discussion_id,
                 "completed",

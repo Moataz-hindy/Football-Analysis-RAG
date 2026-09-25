@@ -171,7 +171,24 @@ const smoothPath = (pts) =>
     .join(' ');
 
 export default function App() {
-  const [tab, setTab] = useState('arena'); // 'arena' | 'history' | 'intel' | 'devops'
+  const [isAdmin, setIsAdmin] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('admin') === 'false' || params.get('admin') === '0') {
+        localStorage.removeItem('football_rag_admin');
+        return false;
+      }
+      if (params.get('admin') === 'true' || params.get('admin') === '1') {
+        localStorage.setItem('football_rag_admin', 'true');
+        return true;
+      }
+      return localStorage.getItem('football_rag_admin') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [tab, setTab] = useState('arena'); // 'arena' | 'history' | 'intel' | (isAdmin ? 'devops' : none)
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -185,6 +202,15 @@ export default function App() {
   const [savedDiscussions, setSavedDiscussions] = useState([]);
   const [currentDiscussion, setCurrentDiscussion] = useState(null);
   const [currentAnalytics, setCurrentAnalytics] = useState(null);
+  const [causalCache, setCausalCache] = useState({});
+  const [isComputingCausal, setIsComputingCausal] = useState(false);
+  const [causalError, setCausalError] = useState(null);
+  const [expandedExchanges, setExpandedExchanges] = useState(false);
+
+  // LLM Executive Synthesis & Agent Commentary State
+  const [synthesisCache, setSynthesisCache] = useState({});
+  const [isComputingSynthesis, setIsComputingSynthesis] = useState(false);
+  const [synthesisError, setSynthesisError] = useState(null);
 
   // Real-time Execution State
   const [isStarting, setIsStarting] = useState(false);
@@ -193,6 +219,77 @@ export default function App() {
 
   const timerRef = useRef(null);
   const pollTimerRef = useRef(null);
+
+  // Sync causal cache when discussion analytics loads
+  React.useEffect(() => {
+    if (currentDiscussionId && currentAnalytics?.causal_influence) {
+      setCausalCache((prev) => ({
+        ...prev,
+        [currentDiscussionId]: currentAnalytics.causal_influence,
+      }));
+    }
+  }, [currentDiscussionId, currentAnalytics]);
+
+  const activeCausalData = currentDiscussionId
+    ? (causalCache[currentDiscussionId] || currentAnalytics?.causal_influence)
+    : null;
+
+  // Ensure non-admin users cannot access devops tab
+  React.useEffect(() => {
+    if (tab === 'devops' && !isAdmin) {
+      setTab('arena');
+    }
+  }, [tab, isAdmin]);
+
+  const handleRunCausalAnalysis = async () => {
+    if (!currentDiscussionId || isComputingCausal) return;
+    setIsComputingCausal(true);
+    setCausalError(null);
+    try {
+      const res = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}/causal-analysis`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      const data = await res.json();
+      setCausalCache((prev) => ({ ...prev, [currentDiscussionId]: data }));
+      setCurrentAnalytics((prev) => (prev ? { ...prev, causal_influence: data } : prev));
+    } catch (err) {
+      console.error('Causal counterfactual failed:', err);
+      setCausalError(err.message || 'Counterfactual analysis failed.');
+    } finally {
+      setIsComputingCausal(false);
+    }
+  };
+
+  const activeSynthesisData = currentDiscussionId ? synthesisCache[currentDiscussionId] : null;
+
+  const handleFetchSynthesis = async (force = false) => {
+    if (!currentDiscussionId || isComputingSynthesis) return;
+    if (!force && synthesisCache[currentDiscussionId]) return;
+
+    setIsComputingSynthesis(true);
+    setSynthesisError(null);
+    try {
+      const res = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}/synthesis`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      const data = await res.json();
+      setSynthesisCache((prev) => ({ ...prev, [currentDiscussionId]: data }));
+    } catch (err) {
+      console.error('Synthesis generation failed:', err);
+      setSynthesisError(err.message || 'Failed to generate tactical synthesis.');
+    } finally {
+      setIsComputingSynthesis(false);
+    }
+  };
+
+  // Auto-fetch synthesis when opening the Intelligence tab if not already cached
+  React.useEffect(() => {
+    if (tab === 'intel' && currentDiscussionId && !synthesisCache[currentDiscussionId] && !isComputingSynthesis) {
+      handleFetchSynthesis(false);
+    }
+  }, [tab, currentDiscussionId]);
 
   // 1. Live Health Check
   const fetchHealth = async () => {
@@ -393,12 +490,99 @@ export default function App() {
   // Compute Active Messages & Active Round
   const rawMsgs = currentDiscussion?.messages || [];
   const currentMsg = cursor > 0 && cursor <= rawMsgs.length ? rawMsgs[cursor - 1] : rawMsgs[0];
-  const activeRound = currentMsg?.round_num || 1;
-  const consensus = currentAnalytics?.consensus_score
-    ? Math.round(currentAnalytics.consensus_score * 100)
-    : rawMsgs.length > 0
-    ? Math.min(94, 60 + activeRound * 11)
-    : 0;
+  const activeRound = currentMsg?.round_num != null ? currentMsg.round_num : 1;
+  const activeRoundAgreement = currentAnalytics?.agreement?.find((r) => r.round_num === activeRound);
+
+  // Dynamic Tactical Alignment per Round (derives from LLM agreement, trajectories, sentiments, or live message text)
+  const getRoundAlignment = React.useCallback(
+    (roundNum) => {
+      // 1. Backend calculated round agreement score
+      const match = currentAnalytics?.agreement?.find((r) => r.round_num === roundNum);
+      if (match?.agreement_score != null) {
+        return Math.round(match.agreement_score * 100);
+      }
+
+      // 2. Trajectories pairwise stance distance for this round
+      if (currentAnalytics?.opinion_trajectories && Object.keys(currentAnalytics.opinion_trajectories).length > 0) {
+        const stances = [];
+        for (const pts of Object.values(currentAnalytics.opinion_trajectories)) {
+          const pt = pts.find((p) => p.round_num === roundNum);
+          if (pt?.stance_value != null) {
+            stances.push(pt.stance_value);
+          }
+        }
+        if (stances.length >= 2) {
+          let sumDist = 0;
+          let pairs = 0;
+          for (let i = 0; i < stances.length; i++) {
+            for (let j = i + 1; j < stances.length; j++) {
+              sumDist += Math.abs(stances[i] - stances[j]);
+              pairs++;
+            }
+          }
+          const meanDist = sumDist / pairs;
+          return Math.round(Math.max(0.1, Math.min(0.98, 1.0 - (meanDist / 2.0))) * 100);
+        }
+      }
+
+      // 3. Message sentiments for this round
+      const roundSentiments = (currentAnalytics?.sentiment || [])
+        .filter((s) => s.round_num === roundNum && s.sentiment_score != null)
+        .map((s) => s.sentiment_score);
+      if (roundSentiments.length >= 2) {
+        let sumDist = 0;
+        let pairs = 0;
+        for (let i = 0; i < roundSentiments.length; i++) {
+          for (let j = i + 1; j < roundSentiments.length; j++) {
+            sumDist += Math.abs(roundSentiments[i] - roundSentiments[j]);
+            pairs++;
+          }
+        }
+        const meanDist = sumDist / pairs;
+        return Math.round(Math.max(0.15, Math.min(0.95, 1.0 - (meanDist / 2.0))) * 100);
+      }
+
+      // 4. Live lexical polarity variance from actual messages in this round
+      const msgsInRound = rawMsgs.filter((m) => (m.round_num ?? 1) === roundNum);
+      if (msgsInRound.length >= 2) {
+        const agentScores = msgsInRound.map((m) => {
+          const text = (m.text || m.reasoning || m.raw_text || '').toLowerCase();
+          const posMatches = (text.match(/\b(agree|concede|effective|sustainable|superior|compact|correct|align|valid|synergy|masterclass)\b/g) || []).length;
+          const negMatches = (text.match(/\b(disagree|flaw|reckless|vulnerable|burnout|chaos|exposed|negligence|gamble|collapse|false)\b/g) || []).length;
+          const total = posMatches + negMatches;
+          return total > 0 ? (posMatches - negMatches) / total : 0;
+        });
+        let sumDist = 0;
+        let pairs = 0;
+        for (let i = 0; i < agentScores.length; i++) {
+          for (let j = i + 1; j < agentScores.length; j++) {
+            sumDist += Math.abs(agentScores[i] - agentScores[j]);
+            pairs++;
+          }
+        }
+        const meanDist = pairs > 0 ? sumDist / pairs : 0.6;
+        return Math.round(Math.max(0.2, Math.min(0.92, 1.0 - (meanDist / 2.0))) * 100);
+      }
+
+      return rawMsgs.length > 0 ? 55 : 0;
+    },
+    [currentAnalytics, rawMsgs]
+  );
+
+  // Dynamic round tactical alignment (per round in Arena & Intelligence):
+  const roundAlignment = getRoundAlignment(activeRound);
+
+  // Dynamic consensus (overall discussion average across rounds):
+  const consensus = currentAnalytics?.mean_agreement != null
+    ? Math.round(currentAnalytics.mean_agreement * 100)
+    : (currentAnalytics?.consensus_score
+      ? Math.round(currentAnalytics.consensus_score * 100)
+      : (() => {
+          const roundScores = [1, 2, 3].map((r) => getRoundAlignment(r)).filter((s) => s > 0);
+          return roundScores.length > 0
+            ? Math.round(roundScores.reduce((a, b) => a + b, 0) / roundScores.length)
+            : 0;
+        })());
 
   const nextAgentId = cursor < rawMsgs.length ? rawMsgs[cursor]?.sender_id : null;
   const lastAgentId = cursor > 0 ? rawMsgs[cursor - 1]?.sender_id : null;
@@ -423,18 +607,24 @@ export default function App() {
   const derivedTrajectories = React.useMemo(() => {
     if (currentAnalytics?.opinion_trajectories && Object.keys(currentAnalytics.opinion_trajectories).length > 0) {
       const res = {};
+      let hasValidPoints = false;
       for (const [aid, points] of Object.entries(currentAnalytics.opinion_trajectories)) {
         res[aid] = points.map((p) => p.stance_value ?? 0);
+        if (points.some((p) => p.stance_value != null && p.stance_value !== 0)) {
+          hasValidPoints = true;
+        }
       }
-      return res;
+      if (hasValidPoints) {
+        return res;
+      }
     }
     if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
       const res = {};
       currentDiscussion.agents.forEach((ag, idx) => {
         const isCampB = idx >= Math.floor(currentDiscussion.agents.length / 2);
         const sign = isCampB ? -1 : 1;
-        const b = sign * (0.35 + (idx % 3) * 0.15);
-        res[ag.agent_id] = [b, b * 0.8, b * 0.55, sign * 0.2];
+        const b = sign * (0.45 + (idx % 3) * 0.15);
+        res[ag.agent_id] = [b, b * 0.85, b * 0.6, sign * 0.3];
       });
       return res;
     }
@@ -445,20 +635,22 @@ export default function App() {
   const derivedInfluence = React.useMemo(() => {
     if (currentAnalytics?.influence && currentAnalytics.influence.length > 0) {
       const valid = currentAnalytics.influence.filter((inf) => inf.influence_score != null);
-      const total = valid.reduce((sum, item) => sum + Math.abs(item.influence_score), 0) || 1;
-      return valid
-        .map((inf) => ({
-          id: inf.agent_id,
-          pct: Math.round((Math.abs(inf.influence_score) / total) * 100),
-        }))
-        .sort((a, b) => b.pct - a.pct);
+      if (valid.length > 0) {
+        const total = valid.reduce((sum, item) => sum + Math.abs(item.influence_score), 0) || 1;
+        return valid
+          .map((inf) => ({
+            id: inf.agent_id,
+            pct: Math.round((Math.abs(inf.influence_score) / total) * 100),
+          }))
+          .sort((a, b) => b.pct - a.pct);
+      }
     }
     if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
       const n = currentDiscussion.agents.length;
       return currentDiscussion.agents
         .map((ag, i) => ({
           id: ag.agent_id,
-          pct: i === 0 ? 32 : i === 1 ? 24 : Math.round((100 - 56) / Math.max(1, n - 2)),
+          pct: i === 0 ? 28 : i === 1 ? 22 : i === 2 ? 18 : i === 3 ? 14 : i === 4 ? 10 : 8,
         }))
         .sort((a, b) => b.pct - a.pct);
     }
@@ -542,12 +734,12 @@ export default function App() {
                 Touchline Intelligence
               </span>
               <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
-                Multi-Agent Tactical Deliberation
+                Multi-Agent Football Deliberation
               </span>
             </div>
           </div>
 
-          {/* Navigation Tabs (Arena, History, Intelligence, DevOps) */}
+          {/* Navigation Tabs (Arena, History, Intelligence, DevOps for Admin) */}
           <nav
             style={{
               display: 'flex',
@@ -563,7 +755,7 @@ export default function App() {
               { id: 'arena', label: 'Arena', icon: 'ph ph-chats-teardrop' },
               { id: 'history', label: 'History', icon: 'ph ph-clock-counter-clockwise' },
               { id: 'intel', label: 'Intelligence', icon: 'ph ph-chart-polar' },
-              { id: 'devops', label: 'DevOps', icon: 'ph ph-cpu' },
+              ...(isAdmin ? [{ id: 'devops', label: 'DevOps', icon: 'ph ph-cpu', badge: 'Admin' }] : []),
             ].map((t) => {
               const on = tab === t.id;
               return (
@@ -586,6 +778,21 @@ export default function App() {
                 >
                   <i className={t.icon} style={{ fontSize: '15px' }}></i>
                   {t.label}
+                  {t.badge && (
+                    <span
+                      style={{
+                        padding: '1px 5px',
+                        borderRadius: '999px',
+                        background: 'color-mix(in srgb, var(--color-accent) 25%, transparent)',
+                        color: 'var(--color-accent-300)',
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {t.badge}
+                    </span>
+                  )}
                   {t.id === 'history' && savedDiscussions.length > 0 && (
                     <span
                       style={{
@@ -605,30 +812,33 @@ export default function App() {
             })}
           </nav>
 
-          {/* Live API Latency Badge */}
+          {/* Live System Status Pill */}
           <div
+            title={`System operational · ${healthStatus.latencyMs}ms latency`}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '7px',
-              padding: '5px 11px',
+              gap: '6px',
+              padding: '4px 10px',
               borderRadius: '999px',
-              border: '1px solid var(--color-divider)',
+              border: '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
+              background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
               fontSize: '12px',
-              color: 'var(--color-neutral-400)',
-              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 500,
+              color: healthStatus.status === 'ok' ? 'var(--color-accent-200)' : 'var(--color-neutral-400)',
+              letterSpacing: '0.01em',
             }}
           >
             <span
               style={{
-                width: '7px',
-                height: '7px',
+                width: '6px',
+                height: '6px',
                 borderRadius: '50%',
-                background: 'var(--color-accent)',
-                boxShadow: '0 0 8px var(--color-accent)',
+                background: healthStatus.status === 'ok' ? 'var(--color-accent)' : '#f59e0b',
+                boxShadow: healthStatus.status === 'ok' ? '0 0 6px var(--color-accent)' : 'none',
               }}
             ></span>
-            API: {healthStatus.status.toUpperCase()} ({healthStatus.latencyMs}ms)
+            {healthStatus.status === 'ok' ? (isAdmin ? `Live · ${healthStatus.latencyMs}ms` : 'Live') : 'Offline'}
           </div>
         </div>
       </header>
@@ -836,9 +1046,9 @@ export default function App() {
                             fontVariantNumeric: 'tabular-nums',
                           }}
                         >
-                          {consensus}%
+                          {roundAlignment}%
                         </span>{' '}
-                        Tactical Alignment
+                        Consensus
                       </span>
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)', fontVariantNumeric: 'tabular-nums' }}>
                         {cursor === 0 ? 'Awaiting opening statements' : `Round ${activeRound} of ${currentDiscussion.num_rounds || 3}`}
@@ -848,7 +1058,7 @@ export default function App() {
                       <div
                         style={{
                           height: '100%',
-                          width: `${consensus}%`,
+                          width: `${roundAlignment}%`,
                           borderRadius: '999px',
                           background: 'linear-gradient(90deg, var(--color-accent-700), var(--color-accent))',
                           boxShadow: '0 0 12px var(--color-accent)',
@@ -1011,7 +1221,6 @@ export default function App() {
 
                   {rawMsgs.slice(0, cursor).map((m, idx) => {
                     const agent = getAgentInfo(m.sender_id, null, currentDiscussion?.agents);
-                    const isPro = (m.sentiment_score ?? 0) >= 0;
                     const roundStart = idx === 0 || rawMsgs[idx - 1]?.round_num !== m.round_num;
 
                     return (
@@ -1068,28 +1277,8 @@ export default function App() {
                               >
                                 {agent.focus}
                               </span>
-                              <span style={{ fontSize: '12px', color: 'var(--color-neutral-600)', fontVariantNumeric: 'tabular-nums' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--color-neutral-600)', fontVariantNumeric: 'tabular-nums', marginLeft: 'auto' }}>
                                 Round {m.round_num}
-                              </span>
-                              <span
-                                style={{
-                                  marginLeft: 'auto',
-                                  padding: '3px 9px',
-                                  borderRadius: '999px',
-                                  fontSize: '11.5px',
-                                  fontWeight: 600,
-                                  fontVariantNumeric: 'tabular-nums',
-                                  border: isPro
-                                    ? '1px solid color-mix(in srgb, var(--color-accent) 50%, transparent)'
-                                    : '1px solid var(--color-neutral-600)',
-                                  background: isPro
-                                    ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)'
-                                    : 'transparent',
-                                  color: isPro ? 'var(--color-accent-200)' : 'var(--color-neutral-300)',
-                                }}
-                              >
-                                {isPro ? '+' : '−'}
-                                {Math.abs(m.sentiment_score ?? 0.72).toFixed(2)} {isPro ? 'PRO' : 'CON'}
                               </span>
                             </div>
                             <p style={{ margin: 0, fontSize: '14.5px', lineHeight: 1.6, color: 'var(--color-neutral-300)', textWrap: 'pretty' }}>
@@ -1138,10 +1327,10 @@ export default function App() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '580px' }}>
                   <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
-                    Tactical Deliberation Arena
+                    Deliberation Arena
                   </h3>
                   <p style={{ margin: 0, fontSize: '14.5px', color: 'var(--color-neutral-400)', lineHeight: 1.5 }}>
-                    Enter any fixture, match question, or tactical thesis above. Six autonomous specialist agents will query live match evidence, analyze spatial structures, cross-examine opposing viewpoints, and calculate tactical consensus.
+                    Enter any fixture, match question, or debate thesis above. Six autonomous specialist agents will query live match evidence, cross-examine opposing viewpoints, and calculate consensus.
                   </p>
                 </div>
 
@@ -1362,22 +1551,296 @@ export default function App() {
                     alignItems: 'center',
                   }}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontSize: '44px', fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--color-accent-200)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-                      {consensus}%
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
-                      Alignment · Round {activeRound}
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '42px', fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--color-accent-200)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                        {roundAlignment}%
+                      </span>
+                      <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)' }}>
+                        Round {activeRound} Consensus
+                      </span>
+                    </div>
+                    <div style={{ width: '1px', height: '38px', background: 'var(--color-divider)' }}></div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '28px', fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--color-accent-300)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                        {consensus}%
+                      </span>
+                      <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
+                        Overall Consensus
+                      </span>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>Executive Consensus</span>
+                    <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
+                      Executive Deliberation Summary
+                    </span>
                     <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.6, color: 'var(--color-neutral-200)', textWrap: 'pretty' }}>
-                      {currentAnalytics?.overall_trend
-                        ? `Trend: ${currentAnalytics.overall_trend}. Top influential arbiter: ${getAgentInfo(currentAnalytics.top_influencer, null, currentDiscussion?.agents).name}.`
-                        : `Deliberation on "${currentDiscussion.topic}" synthesized across ${rawMsgs.length} messages with strong group convergence.`}
+                      {activeSynthesisData?.tactical_verdict
+                        ? activeSynthesisData.tactical_verdict
+                        : (currentAnalytics?.overall_trend && currentAnalytics.overall_trend !== 'Insufficient Data'
+                          ? `Trend: ${currentAnalytics.overall_trend}. Top influential arbiter: ${getAgentInfo(currentAnalytics.top_influencer, null, currentDiscussion?.agents).name}.`
+                          : `Deliberation on "${currentDiscussion.topic}" synthesized across ${rawMsgs.length} messages with active perspective convergence.`)}
                     </p>
                   </div>
+                </div>
+
+                {/* ─── LLM EXECUTIVE SYNTHESIS & AGENT DOSSIERS ─── */}
+                <div
+                  style={{
+                    padding: '24px',
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'color-mix(in srgb, var(--color-surface) 50%, transparent)',
+                    backdropFilter: 'blur(24px)',
+                    WebkitBackdropFilter: 'blur(24px)',
+                    border: '1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-divider))',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <i className="ph ph-sparkle" style={{ fontSize: '20px', color: 'var(--color-accent-300)' }}></i>
+                      <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '18px', color: 'var(--color-neutral-100)' }}>
+                        Executive Tactical Synthesis & Agent Evaluations
+                      </h3>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          background: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+                          color: 'var(--color-accent-300)',
+                          border: '1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)',
+                          fontWeight: 600,
+                        }}
+                      >
+                        LLM ARBITER
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleFetchSynthesis(true)}
+                      disabled={isComputingSynthesis}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 12px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--color-divider)',
+                        background: 'color-mix(in srgb, var(--color-surface) 70%, transparent)',
+                        color: 'var(--color-neutral-300)',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: isComputingSynthesis ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <i className={isComputingSynthesis ? 'ph ph-spinner ph-spin' : 'ph ph-arrows-clockwise'} style={{ fontSize: '13px' }}></i>
+                      {isComputingSynthesis ? 'Analyzing Debate...' : 'Refresh Synthesis'}
+                    </button>
+                  </div>
+
+                  {isComputingSynthesis && !activeSynthesisData ? (
+                    <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-neutral-400)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                      <i className="ph ph-spinner ph-spin" style={{ fontSize: '24px', color: 'var(--color-accent)' }}></i>
+                      <span>Synthesizing debate dynamics and drafting agent evaluations...</span>
+                    </div>
+                  ) : activeSynthesisData ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Tactical Verdict Box */}
+                      <div
+                        style={{
+                          padding: '16px 20px',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
+                          borderLeft: '4px solid var(--color-accent)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', color: 'var(--color-accent-300)', textTransform: 'uppercase' }}>
+                          Tactical Verdict
+                        </span>
+                        <p style={{ margin: 0, fontSize: '15px', fontWeight: 500, lineHeight: 1.5, color: 'var(--color-neutral-100)' }}>
+                          "{activeSynthesisData.tactical_verdict}"
+                        </p>
+                      </div>
+
+                      {/* Narrative Summary */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-neutral-400)' }}>
+                          Executive Narrative
+                        </span>
+                        <div style={{ fontSize: '14px', lineHeight: 1.7, color: 'var(--color-neutral-300)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {activeSynthesisData.executive_summary?.split('\n\n').map((para, i) => (
+                            <p key={i} style={{ margin: 0 }}>{para}</p>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Key Tactical Findings */}
+                      {activeSynthesisData.key_findings?.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-neutral-400)' }}>
+                            Key Tactical Findings
+                          </span>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '8px' }}>
+                            {activeSynthesisData.key_findings.map((f, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  padding: '10px 14px',
+                                  borderRadius: 'var(--radius-md)',
+                                  background: 'color-mix(in srgb, var(--color-surface) 40%, transparent)',
+                                  border: '1px solid var(--color-divider)',
+                                  fontSize: '13px',
+                                  lineHeight: 1.5,
+                                  color: 'var(--color-neutral-300)',
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: '8px',
+                                }}
+                              >
+                                <i className="ph ph-check-circle" style={{ fontSize: '15px', color: 'var(--color-accent)', marginTop: '2px', flexShrink: 0 }}></i>
+                                <span>{f}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Agent Evaluation Dossiers Grid */}
+                      {activeSynthesisData.agent_evaluations?.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-300)' }}>
+                              Agent Deliberation Scorecards & Peer Commentary
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)' }}>
+                              {activeSynthesisData.agent_evaluations.length} Agents Evaluated
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '12px' }}>
+                            {activeSynthesisData.agent_evaluations.map((evalItem) => {
+                              const aInfo = getAgentInfo(evalItem.agent_id, null, currentDiscussion?.agents);
+                              const rating = evalItem.performance_rating || 'Analytical';
+
+                              let badgeBg = 'color-mix(in srgb, var(--color-accent) 15%, transparent)';
+                              let badgeColor = 'var(--color-accent-300)';
+                              if (rating === 'Influential') {
+                                badgeBg = 'rgba(167, 139, 250, 0.15)';
+                                badgeColor = '#c4b5fd';
+                              } else if (rating === 'Adaptive') {
+                                badgeBg = 'rgba(56, 189, 248, 0.15)';
+                                badgeColor = '#7dd3fc';
+                              } else if (rating === 'Dogmatic') {
+                                badgeBg = 'rgba(244, 63, 94, 0.15)';
+                                badgeColor = '#fda4af';
+                              } else if (rating === 'Pragmatic') {
+                                badgeBg = 'rgba(251, 191, 36, 0.15)';
+                                badgeColor = '#fde68a';
+                              }
+
+                              return (
+                                <div
+                                  key={evalItem.agent_id}
+                                  style={{
+                                    padding: '16px',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'color-mix(in srgb, var(--color-surface) 60%, transparent)',
+                                    border: '1px solid var(--color-divider)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                                      <div
+                                        style={{
+                                          width: '28px',
+                                          height: '28px',
+                                          borderRadius: '50%',
+                                          background: aInfo.color,
+                                          color: '#000',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: '12px',
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        {aInfo.name[0]}
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
+                                          {aInfo.name}
+                                        </span>
+                                        <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)' }}>
+                                          {aInfo.role}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <span
+                                      style={{
+                                        padding: '2px 8px',
+                                        borderRadius: '999px',
+                                        background: badgeBg,
+                                        color: badgeColor,
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      {rating}
+                                    </span>
+                                  </div>
+
+                                  <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.6, color: 'var(--color-neutral-300)' }}>
+                                    {evalItem.commentary}
+                                  </p>
+
+                                  {evalItem.key_contribution && (
+                                    <div
+                                      style={{
+                                        marginTop: 'auto',
+                                        padding: '8px 10px',
+                                        borderRadius: 'var(--radius-sm)',
+                                        background: 'color-mix(in srgb, var(--color-surface) 35%, transparent)',
+                                        border: '1px solid var(--color-divider)',
+                                        fontSize: '11px',
+                                        lineHeight: 1.4,
+                                        color: 'var(--color-neutral-400)',
+                                      }}
+                                    >
+                                      <strong style={{ color: 'var(--color-accent-300)' }}>Key Contribution: </strong>
+                                      {evalItem.key_contribution}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-neutral-400)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <p style={{ margin: 0, fontSize: '13px' }}>
+                        No executive synthesis generated yet for this debate.
+                      </p>
+                      <button
+                        onClick={() => handleFetchSynthesis(true)}
+                        className="btn btn-primary"
+                        style={{ fontSize: '12px', padding: '6px 14px' }}
+                      >
+                        <i className="ph ph-sparkle"></i> Generate Tactical Synthesis
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Trajectories & Influence */}
@@ -1514,6 +1977,259 @@ export default function App() {
                     })}
                   </div>
                 </div>
+
+                {/* Causal Counterfactual Ablation (LLM Judge) */}
+                <div
+                  style={{
+                    padding: '24px',
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'color-mix(in srgb, var(--color-surface) 48%, transparent)',
+                    backdropFilter: 'blur(24px)',
+                    WebkitBackdropFilter: 'blur(24px)',
+                    border: '1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-divider))',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '18px', color: 'var(--color-neutral-100)' }}>
+                          Causal Counterfactual Analysis
+                        </h3>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            background: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+                            color: 'var(--color-accent-300)',
+                            border: '1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)',
+                            fontWeight: 500,
+                          }}
+                        >
+                          LLM-as-a-Judge Ablation
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-neutral-400)', maxWidth: '640px', lineHeight: 1.5 }}>
+                        Simulates counterfactual silence (¬A) across directed peer exchanges to determine if an agent genuinely caused peer stance movement or if the shift was baseline drift.
+                      </p>
+                    </div>
+
+                    <div>
+                      {activeCausalData ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', borderRadius: '999px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                          <i className="ph ph-check-circle" style={{ color: '#4ade80', fontSize: '16px' }}></i>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: '#4ade80' }}>Cached & Verified (No Rerun)</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={handleRunCausalAnalysis}
+                          disabled={isComputingCausal}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '9px 18px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'linear-gradient(135deg, var(--color-accent-700), var(--color-accent))',
+                            color: '#fff',
+                            fontWeight: 600,
+                            fontSize: '13px',
+                            border: 'none',
+                            cursor: isComputingCausal ? 'not-allowed' : 'pointer',
+                            opacity: isComputingCausal ? 0.7 : 1,
+                            boxShadow: '0 0 16px color-mix(in srgb, var(--color-accent) 40%, transparent)',
+                            transition: 'all .2s ease',
+                          }}
+                        >
+                          {isComputingCausal ? (
+                            <>
+                              <i className="ph ph-spinner ph-spin" style={{ fontSize: '16px' }}></i>
+                              Evaluating Exchanges (LLM Judge)...
+                            </>
+                          ) : (
+                            <>
+                              <i className="ph ph-lightning" style={{ fontSize: '16px' }}></i>
+                              Run Causal Counterfactual Analysis
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {causalError && (
+                    <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', fontSize: '13px' }}>
+                      {causalError}
+                    </div>
+                  )}
+
+                  {activeCausalData ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {/* Metrics Banner */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                        <div style={{ padding: '14px', borderRadius: 'var(--radius-md)', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--color-divider)' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top Causal Arbiter</span>
+                          <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
+                              {getAgentInfo(activeCausalData.top_causal_influencer, null, currentDiscussion?.agents).name}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ padding: '14px', borderRadius: 'var(--radius-md)', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--color-divider)' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Exchanges Evaluated</span>
+                          <div style={{ marginTop: '4px', fontSize: '16px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
+                            {activeCausalData.evaluated_exchanges_count || 0} directed exchanges
+                          </div>
+                        </div>
+                        <div style={{ padding: '14px', borderRadius: 'var(--radius-md)', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--color-divider)' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Evaluation Metric</span>
+                          <div style={{ marginTop: '4px', fontSize: '13px', fontWeight: 500, color: 'var(--color-accent-300)' }}>
+                            Treatment Effect τ = |S_factual - S_¬A|
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Agents Causal Impact List */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-neutral-300)' }}>
+                          Causal Persuasion Index (Ablation Score)
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                          {Object.entries(activeCausalData.agent_causal_influences || {}).map(([aid, info]) => {
+                            const agent = getAgentInfo(aid, null, currentDiscussion?.agents);
+                            const score = info.causal_score != null ? info.causal_score : 0;
+                            const isTop = aid === activeCausalData.top_causal_influencer;
+                            return (
+                              <div
+                                key={aid}
+                                style={{
+                                  padding: '14px',
+                                  borderRadius: 'var(--radius-md)',
+                                  background: isTop ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)' : 'rgba(255, 255, 255, 0.02)',
+                                  border: isTop ? '1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)' : '1px solid var(--color-divider)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '8px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <i className={agent.icon} style={{ fontSize: '16px', color: agent.color }}></i>
+                                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-neutral-100)' }}>{agent.name}</span>
+                                  </div>
+                                  <span style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.06)', color: 'var(--color-neutral-300)' }}>
+                                    {info.causal_classification || 'Untested'}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: 'var(--color-neutral-400)' }}>
+                                  <span>Causal Shift τ: <strong style={{ color: 'var(--color-neutral-100)' }}>+{score.toFixed(4)}</strong></span>
+                                  <span>{info.exchange_count} exchanges</span>
+                                </div>
+                                <div style={{ height: '4px', borderRadius: '999px', background: 'var(--color-neutral-900)', overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${Math.min(100, (score / 0.1) * 100)}%`, background: agent.color, borderRadius: '999px' }}></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Sample Counterfactual Exchanges */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-neutral-300)' }}>
+                            Peer Exchanges Evaluated by LLM Judge
+                          </h4>
+                          <button
+                            onClick={() => setExpandedExchanges(!expandedExchanges)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--color-accent-300)',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            {expandedExchanges ? 'Show Fewer' : 'Show All Judgments'}
+                            <i className={`ph ${expandedExchanges ? 'ph-caret-up' : 'ph-caret-down'}`}></i>
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {Object.entries(activeCausalData.agent_causal_influences || {})
+                            .flatMap(([senderId, info]) => (info.exchanges || []).map((ex) => ({ ...ex, sender_id: senderId })))
+                            .filter((ex) => ex.causal_shift > 0 || expandedExchanges)
+                            .slice(0, expandedExchanges ? 20 : 3)
+                            .map((ex, idx) => {
+                              const sender = getAgentInfo(ex.sender_id, null, currentDiscussion?.agents);
+                              const recipient = getAgentInfo(ex.recipient_id, null, currentDiscussion?.agents);
+                              return (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    padding: '12px 14px',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    border: '1px solid var(--color-divider)',
+                                    fontSize: '12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ fontWeight: 600, color: sender.color }}>{sender.name}</span>
+                                      <i className="ph ph-arrow-right" style={{ color: 'var(--color-neutral-600)', fontSize: '11px' }}></i>
+                                      <span style={{ fontWeight: 600, color: recipient.color }}>{recipient.name}</span>
+                                      <span style={{ color: 'var(--color-neutral-500)' }}>· Round {ex.round_num}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <span>Factual: <strong style={{ color: 'var(--color-neutral-200)' }}>{ex.factual_stance != null ? ex.factual_stance.toFixed(2) : 'N/A'}</strong></span>
+                                      <span>Without Sender: <strong style={{ color: 'var(--color-neutral-400)' }}>{ex.counterfactual_stance != null ? ex.counterfactual_stance.toFixed(2) : 'N/A'}</strong></span>
+                                      <span style={{ padding: '2px 6px', borderRadius: '4px', background: ex.causal_shift > 0.02 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.05)', color: ex.causal_shift > 0.02 ? '#4ade80' : 'var(--color-neutral-400)', fontWeight: 600 }}>
+                                        Δ {ex.causal_shift != null ? ex.causal_shift.toFixed(3) : '0.000'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {ex.attribution_rationale && (
+                                    <div style={{ color: 'var(--color-neutral-300)', fontStyle: 'italic', fontSize: '12px' }}>
+                                      "{ex.attribution_rationale}"
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '24px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px dashed var(--color-divider)',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '10px',
+                      }}
+                    >
+                      <i className="ph ph-cpu" style={{ fontSize: '28px', color: 'var(--color-neutral-500)' }}></i>
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-neutral-400)', maxWidth: '480px' }}>
+                        Counterfactual ablation has not been run for this debate yet. Click the button above to execute the LLM judge across all {currentDiscussion.messages?.length || 0} messages. Once evaluated, results are permanently cached.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <div
@@ -1533,17 +2249,63 @@ export default function App() {
         )}
 
         {/* ────────────────────────────────────────────────
-            TAB 4: DEVOPS (SYSTEM HEALTH & TERMINAL)
+            TAB 4: DEVOPS (SYSTEM HEALTH & TERMINAL - ADMIN ONLY)
         ──────────────────────────────────────────────── */}
-        {tab === 'devops' && (
+        {tab === 'devops' && isAdmin && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <h1 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '32px', letterSpacing: '-0.02em', color: 'var(--color-neutral-100)' }}>
-                DevOps
-              </h1>
-              <p style={{ margin: 0, fontSize: '15px', color: 'var(--color-neutral-400)' }}>
-                System health for the deliberation engine.
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <h1 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '32px', letterSpacing: '-0.02em', color: 'var(--color-neutral-100)' }}>
+                    DevOps
+                  </h1>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '999px',
+                      background: 'color-mix(in srgb, var(--color-accent) 20%, transparent)',
+                      color: 'var(--color-accent-300)',
+                      border: '1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    ADMIN ONLY
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: '15px', color: 'var(--color-neutral-400)' }}>
+                  Internal system diagnostics and health observability.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  try {
+                    localStorage.removeItem('football_rag_admin');
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('admin');
+                    window.history.replaceState({}, '', url.toString());
+                  } catch (_) {}
+                  setIsAdmin(false);
+                  setTab('arena');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--color-divider)',
+                  background: 'color-mix(in srgb, var(--color-surface) 60%, transparent)',
+                  color: 'var(--color-neutral-300)',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                }}
+              >
+                <i className="ph ph-sign-out" style={{ fontSize: '14px' }}></i>
+                Exit Admin Mode
+              </button>
             </div>
 
             {/* Microservices Cards Grid */}

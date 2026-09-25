@@ -16,13 +16,17 @@ load_dotenv()
 
 def get_connection():
     try:
-        conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            port=os.environ.get("DB_PORT", "5432"),
-            dbname=os.environ.get("DB_NAME", "football_intelligence"),
-            user=os.environ.get("DB_USER", "postgres"),
-            password=os.environ.get("DB_PASSWORD"),
-        )
+        db_url = os.environ.get("DATABASE_URL")
+        if db_url:
+            conn = psycopg2.connect(db_url, connect_timeout=10)
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get("DB_HOST", "localhost"),
+                port=os.environ.get("DB_PORT", "5432"),
+                dbname=os.environ.get("DB_NAME", "football_intelligence"),
+                user=os.environ.get("DB_USER", "postgres"),
+                password=os.environ.get("DB_PASSWORD"),
+            )
     except psycopg2.OperationalError as e:
         sys.exit(
             f"Could not connect to Postgres: {e}\n"

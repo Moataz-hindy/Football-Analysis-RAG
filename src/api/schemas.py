@@ -149,6 +149,7 @@ class AnalyticsResponse(BaseModel):
     interaction_graph: dict[str, list[str]] = Field(default_factory=dict)
     cached: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+    causal_influence: dict[str, Any] | None = None
 
 
 # ── Generic Error ──

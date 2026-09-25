@@ -49,6 +49,9 @@ services:
       retries: 3
     networks:
       - backend_network
+    volumes:
+      - ./outputs:/app/outputs
+      - ./reports/api_cache:/app/reports/api_cache
     restart: unless-stopped
 
 networks:

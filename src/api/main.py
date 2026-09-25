@@ -4,6 +4,8 @@ import logging
 import os
 import sys
 import time
+import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -44,6 +46,32 @@ allowed_origins = (
 )
 
 
+def _init_database_if_needed():
+    """Ensure pgvector extension, table schema, and precomputed embeddings exist."""
+    if not (os.environ.get("DATABASE_URL") or os.environ.get("DB_HOST")):
+        return
+    try:
+        from src.rag.search import get_connection
+        conn = get_connection()
+        cur = conn.cursor()
+        init_sql_path = Path(__file__).resolve().parents[2] / "sql" / "init_db.sql"
+        if init_sql_path.is_file():
+            cur.execute(init_sql_path.read_text(encoding="utf-8"))
+            conn.commit()
+        cur.execute("SELECT COUNT(*) FROM football_chunks")
+        count = cur.fetchone()[0]
+        if count == 0:
+            logger.info("Database football_chunks is empty. Ingesting precomputed embeddings...")
+            from src.rag.ingest import main as run_ingest
+            run_ingest()
+            logger.info("Precomputed embeddings ingested successfully.")
+        else:
+            logger.info("Database football_chunks ready with %d chunks.", count)
+        conn.close()
+    except Exception as e:
+        logger.warning("Database auto-init skipped or failed: %s", e)
+
+
 # ── Application Lifespan ──
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,6 +80,7 @@ async def lifespan(app: FastAPI):
     logger.info("Configured CORS origins: %s", allowed_origins)
 
     start_discussion_worker()
+    asyncio.create_task(run_in_threadpool(_init_database_if_needed))
 
     try:
         yield

@@ -342,3 +342,75 @@ async def get_analytics(discussion_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Analytics processing failed. Check the server logs.",
         )
+
+
+# ── 8. Discussion Causal Counterfactual Analysis ──
+@router.post(
+    "/discussions/{discussion_id}/causal-analysis",
+    tags=["Analytics"],
+    summary="Run or retrieve counterfactual causal ablation analysis",
+)
+@router.get(
+    "/discussions/{discussion_id}/causal-analysis",
+    tags=["Analytics"],
+    summary="Get counterfactual causal ablation analysis",
+)
+async def get_causal_analysis(discussion_id: str):
+    """Compute or load cached counterfactual causal ablation for a discussion."""
+    from src.api.services.analytics_service import (
+        get_discussion_causal_analysis,
+    )
+
+    try:
+        return await get_discussion_causal_analysis(discussion_id)
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discussion '{discussion_id}' not found.",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.exception("Causal analysis failed for %s", discussion_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Causal analysis failed: {exc}",
+        )
+
+
+@router.post(
+    "/discussions/{discussion_id}/synthesis",
+    tags=["Analytics"],
+    summary="Generate or retrieve LLM executive summary and agent commentary synthesis",
+)
+@router.get(
+    "/discussions/{discussion_id}/synthesis",
+    tags=["Analytics"],
+    summary="Get LLM executive summary and agent commentary synthesis",
+)
+async def get_or_compute_synthesis_route(discussion_id: str):
+    """Retrieve or generate LLM executive summary and agent commentary synthesis."""
+    from src.api.services.analytics_service import get_discussion_synthesis
+
+    try:
+        return await get_discussion_synthesis(discussion_id)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discussion '{discussion_id}' not found.",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.exception("Synthesis failed for %s", discussion_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Synthesis failed: {exc}",
+        )

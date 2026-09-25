@@ -184,3 +184,6 @@ pytest tests/test_api.py tests/test_health.py -v
 | **Pydantic backtracking during pip install** | Old `pydantic>=2,<3` constraint causing solver backtracking. | Pin `pydantic>=2.7.0,<3.0.0` (already applied in `requirements.txt`). |
 | **Database connection refused** | Database starting slower than API container. | `docker-compose.yml` uses `condition: service_healthy` to ensure Postgres is accepting queries before API launches. |
 | **Frontend assets 404** | Missing `frontend/` directory inside container. | `Dockerfile` copies all files (`COPY . .`), ensuring `/app/frontend` is available to FastAPI static files. |
+| **Discussion history persistence** | Ephemeral container rebuilds in cloud. | Mount a persistent volume to `/app/outputs` and `/app/reports/api_cache` (pre-configured in `docker-compose.yml`). |
+| **DevOps tab hidden in UI** | Intentionally restricted to administrators. | Append `?admin=true` to the URL (e.g. `http://localhost:8000/?admin=true`) to unlock the DevOps Command Center. Click "Exit Admin Mode" to return to standard user view. |
+
