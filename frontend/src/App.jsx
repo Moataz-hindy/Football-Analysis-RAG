@@ -203,6 +203,7 @@ export default function App() {
   const [searchHistory, setSearchHistory] = useState('');
   const [hoverAgent, setHoverAgent] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [selectedRounds, setSelectedRounds] = useState(3);
 
   // Live Backend State
   const [healthStatus, setHealthStatus] = useState({ status: 'ok', latencyMs: 12 });
@@ -426,7 +427,7 @@ export default function App() {
       const res = await fetch('/discussions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: prompt, num_rounds: 3, dynamic_personas: true }),
+        body: JSON.stringify({ topic: prompt, num_rounds: selectedRounds, dynamic_personas: true }),
       });
 
       if (!res.ok) {
@@ -500,6 +501,20 @@ export default function App() {
   const currentMsg = cursor > 0 && cursor <= rawMsgs.length ? rawMsgs[cursor - 1] : rawMsgs[0];
   const activeRound = currentMsg?.round_num != null ? currentMsg.round_num : 1;
   const activeRoundAgreement = currentAnalytics?.agreement?.find((r) => r.round_num === activeRound);
+
+  // Available Rounds (always includes 0 for opening statements, up to total rounds)
+  const totalRounds = React.useMemo(() => {
+    if (currentDiscussion?.num_rounds) return currentDiscussion.num_rounds;
+    if (rawMsgs.length > 0) {
+      const maxR = Math.max(...rawMsgs.map((m) => m.round_num ?? 0));
+      return Math.max(2, maxR);
+    }
+    return 3;
+  }, [currentDiscussion, rawMsgs]);
+
+  const availableRounds = React.useMemo(() => {
+    return Array.from({ length: totalRounds + 1 }, (_, i) => i);
+  }, [totalRounds]);
 
   // Dynamic Tactical Alignment per Round (derives from LLM agreement, trajectories, sentiments, or live message text)
   const getRoundAlignment = React.useCallback(
@@ -586,7 +601,10 @@ export default function App() {
     : (currentAnalytics?.consensus_score
       ? Math.round(currentAnalytics.consensus_score * 100)
       : (() => {
-          const roundScores = [1, 2, 3].map((r) => getRoundAlignment(r)).filter((s) => s > 0);
+          const roundScores = availableRounds
+            .filter((r) => r > 0)
+            .map((r) => getRoundAlignment(r))
+            .filter((s) => s > 0);
           return roundScores.length > 0
             ? Math.round(roundScores.reduce((a, b) => a + b, 0) / roundScores.length)
             : 0;
@@ -937,6 +955,45 @@ export default function App() {
                     }}
                   />
                 </div>
+                {/* Rounds Dropdown Selector */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '0 14px',
+                    height: '50px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'color-mix(in srgb, var(--color-bg) 70%, transparent)',
+                    border: '1px solid var(--color-divider)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className="ph ph-arrows-clockwise" style={{ fontSize: '16px', color: 'var(--color-accent)' }}></i>
+                  <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                    Rounds:
+                  </span>
+                  <select
+                    value={selectedRounds}
+                    onChange={(e) => setSelectedRounds(Number(e.target.value))}
+                    disabled={isStarting}
+                    aria-label="Select number of deliberation rounds"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      color: 'var(--color-neutral-100)',
+                      font: '600 13px var(--font-body)',
+                      cursor: 'pointer',
+                      padding: '4px 6px 4px 2px',
+                    }}
+                  >
+                    <option value={2} style={{ background: '#0c1224', color: '#f1f5f9' }}>2 Rounds</option>
+                    <option value={3} style={{ background: '#0c1224', color: '#f1f5f9' }}>3 Rounds (Default)</option>
+                    <option value={4} style={{ background: '#0c1224', color: '#f1f5f9' }}>4 Rounds</option>
+                    <option value={5} style={{ background: '#0c1224', color: '#f1f5f9' }}>5 Rounds</option>
+                  </select>
+                </div>
                 <button
                   className="btn btn-primary"
                   onClick={() => handleStart()}
@@ -1059,7 +1116,7 @@ export default function App() {
                         Consensus
                       </span>
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)', fontVariantNumeric: 'tabular-nums' }}>
-                        {cursor === 0 ? 'Awaiting opening statements' : `Round ${activeRound} of ${currentDiscussion.num_rounds || 3}`}
+                        {cursor === 0 ? 'Awaiting opening statements' : activeRound === 0 ? 'Round 0 (Opening Statements)' : `Round ${activeRound} of ${currentDiscussion.num_rounds || totalRounds}`}
                       </span>
                     </div>
                     <div style={{ height: '6px', borderRadius: '999px', background: 'var(--color-neutral-900)', overflow: 'hidden' }}>
@@ -1138,8 +1195,8 @@ export default function App() {
                     border: '1px solid var(--color-divider)',
                   }}
                 >
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    {[1, 2, 3].map((r) => {
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {availableRounds.map((r) => {
                       const on = cursor > 0 && r === activeRound;
                       return (
                         <button
@@ -1156,6 +1213,7 @@ export default function App() {
                             color: on ? 'var(--color-accent-100)' : 'var(--color-neutral-400)',
                             font: '500 13px var(--font-body)',
                             cursor: 'pointer',
+                            transition: 'all 0.15s ease',
                           }}
                         >
                           Round {r}

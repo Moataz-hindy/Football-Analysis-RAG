@@ -103,6 +103,14 @@ def test_start_discussion_validation_error(client: TestClient):
     response = client.post("/discussions", json=payload)
     assert response.status_code == 422
 
+    # num_rounds < 2 should also return 422
+    payload_low = {
+        "topic": "Invalid low rounds test",
+        "num_rounds": 1,
+    }
+    response_low = client.post("/discussions", json=payload_low)
+    assert response_low.status_code == 422
+
 
 def test_get_discussion_status_completed(client: TestClient):
     """GET /discussions/{id}/status for existing discussion should return 'completed'."""
@@ -165,8 +173,23 @@ def test_cors_headers(client: TestClient):
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
 
-def test_get_discussion_synthesis(client: TestClient):
+def test_get_discussion_synthesis(client: TestClient, monkeypatch):
     """Test retrieving discussion synthesis endpoint."""
+    mock_data = {
+        "tactical_verdict": "Mock verdict",
+        "executive_summary": "Mock summary",
+        "key_findings": ["Finding 1"],
+        "agent_evaluations": [
+            {
+                "agent_id": "tactical_analyst",
+                "agent_name": "Tactical Analyst",
+                "performance_rating": "Influential",
+                "commentary": "Great points made.",
+                "key_contribution": "High press analysis",
+            }
+        ],
+    }
+    monkeypatch.setattr("src.api.services.analytics_service.compute_or_load_synthesis", lambda *args, **kwargs: mock_data)
     response = client.get("/discussions/manual-demo-001/synthesis")
     assert response.status_code == 200
     data = response.json()

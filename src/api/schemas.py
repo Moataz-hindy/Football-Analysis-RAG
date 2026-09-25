@@ -67,7 +67,7 @@ class DiscussionDetailResponse(BaseModel):
 # ── Start Discussion ──
 class StartDiscussionRequest(BaseModel):
     topic: str = Field(min_length=1)
-    num_rounds: int = Field(default=3, ge=3, le=10)
+    num_rounds: int = Field(default=3, ge=2, le=10)
     discussion_id: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9_-]+$",
