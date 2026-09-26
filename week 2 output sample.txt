@@ -1,0 +1,375 @@
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ python "/mnt/c/Users/hatem/Documents/Codex/2026-09-13/he/outputs/week2/test_agents.py" \
+  --repo "/home/hatem/ml/quebettra internship/Football-Analysis-RAG-mixed-test"
+Week 2 interactive check. Each question calls your configured chat API.
+Use tactical: QUESTION, statistical: QUESTION, or both: QUESTION.
+Memory stays separate for each analyst and lasts for this session. Type quit to exit.
+
+> both: How useful is xG for evaluating a team's performance? Give your opinion using the retrieved evidence.
+
+--- TACTICAL ---
+As a tactical coach, I view Expected Goals (xG) as a useful **diagnostic tool for identifying structural efficiency**, but it is fundamentally limited if used as a standalone metric for evaluating overall team performance.
+
+Based on the tactical principles of defensive blocks and structural organization, here is my assessment of xG’s utility:
+
+### 1. The Diagnostic Value: Identifying Structural Breakdowns
+xG is most effective when used to validate whether a team’s defensive or offensive structure is functioning as intended. 
+*   **Defensive Evaluation:** If a team is operating a **low block**—which, as noted in the provided analysis, relies on controlling the half-spaces and maintaining tight interline distances—xG can reveal if that structure is actually limiting high-quality chances. If a team concedes a high volume of low-xG shots from distance, their low block is likely doing its job. If they concede high-xG chances, it indicates a failure in the "last-ditch" defensive phase or a collapse in the spacing between the defensive and midfield lines.
+*   **Offensive Evaluation:** xG helps determine if a team’s attacking patterns are creating high-probability opportunities (e.g., cutbacks, central penetrations) or if they are relying on low-percentage, speculative efforts.
+
+### 2. The Tactical Limitation: Context is King
+The primary danger of xG is that it strips away the **tactical context** of the match. A team’s performance is defined by their ability to execute a game plan, which xG often fails to capture:
+*   **The "Low Block" Paradox:** A team playing a low block may concede a high volume of shots (and thus a higher cumulative xG) while remaining perfectly in control of the match. They are intentionally conceding space in non-dangerous areas to prioritize compactness. If you evaluate them solely on xG against, you might incorrectly label their defensive performance as "poor," ignoring the fact that they forced the opponent into low-value, peripheral shots.
+*   **Transitional Efficiency:** xG does not account for the *quality of the transition*. A team might have a lower xG but a superior tactical plan that exploits the opponent's over-commitment. As the provided analysis notes, a low block is designed to launch counterattacks when the opponent pushes too many resources forward. The success of that strategy is measured by the *outcome* of the transition, not just the xG of the resulting shot.
+
+### 3. The "Human" and "Systemic" Gap
+As the provided sources emphasize, successful defensive systems—whether high, standard, or low blocks—rely on **coordinated movement, discipline, and player profiles**. 
+*   xG cannot measure the "pressing triggers" or the "zonal marking" discipline that prevents an opponent from reaching the high-xG zones in the first place. 
+*   A team might have a "lucky" defensive performance where the opponent misses high-xG chances due to poor finishing or an outstanding goalkeeper performance. xG will show the chance was created, but it won't explain the *structural failure* that allowed the chance to occur.
+
+### Final Verdict
+xG is a **lagging indicator of structural health**. It is a valuable piece of the puzzle for a coaching staff, but it is not a substitute for video analysis or tactical observation. 
+
+If you rely solely on xG, you risk falling into the trap of "result-oriented" analysis. A team can perform their tactical duties perfectly—maintaining compactness, forcing the opponent wide, and controlling the half-spaces—and still lose due to an individual error or a moment of brilliance. Conversely, a team can be structurally chaotic and concede high-xG chances, yet "win" the xG battle because the opponent failed to convert. 
+
+**Tactical discipline and structural compactness determine who wins and loses; xG is merely a way to measure the byproduct of those systems.**
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_034 chunk 18 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 23 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 24 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 1 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 2 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 12 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+Tool activity: knowledge_search (success)
+Turns retained: 1
+
+--- STATISTICAL ---
+As a data analyst, I view Expected Goals (xG) as the foundational metric for stripping away the "noise" of variance and finishing luck to reveal the underlying reality of a team’s performance. While the scoreboard is a binary outcome, xG provides a probabilistic assessment of the quality of chances created and conceded, which is a far more reliable predictor of future performance than raw goal tallies.
+
+Regarding the utility of xG and the broader analytical landscape, the evidence from the upcoming FIFA World Cup 2026™ innovations highlights a critical shift in how we evaluate performance:
+
+### 1. The Shift from Narrative to Objective Data
+The introduction of **Football AI Pro** for the 2026 World Cup is a significant step toward democratizing high-level performance analysis. Previously, teams relied on 50-60 page static reports that required heavy manual interpretation. By providing all 48 participating teams with generative AI-driven analytical capabilities, FIFA is essentially standardizing the ability to measure performance through objective metrics like xG, progressive actions, and spatial dominance. This reduces the reliance on subjective "eye tests" or emotional narratives, ensuring that teams—regardless of their resources—can evaluate their performance based on the quality of their process rather than just the outcome.
+
+### 2. Enhancing the Accuracy of the Data
+The utility of any metric, including xG, is entirely dependent on the quality of the underlying tracking data. The 2026 tournament will utilize 16 optical tracking cameras per stadium, generating over 150 million data points per match. This level of granularity allows for:
+*   **Contextualized xG:** By utilizing 3D recreations and tracking data, analysts can better account for factors that influence shot quality, such as the positioning of defenders or whether a goalkeeper’s line of sight was obstructed.
+*   **Refined Decision-Making:** The ability to use 3D feeds to determine if an offside player interfered with play—or if the ball crossed the touchline—means that the "events" feeding into our xG models will be cleaner and more accurate than ever before.
+
+### 3. The Analyst’s Perspective
+In my professional view, xG is indispensable, but it is not a standalone solution. It is a diagnostic tool. A team might have a high xG, but if their "field tilt" (territorial dominance) is low, or their passing networks are inefficient, that xG might be the result of unsustainable counter-attacking variance rather than structural dominance.
+
+The true value of xG lies in its ability to highlight **regression-to-the-mean patterns**. If a team is consistently outperforming their xG (scoring more than the model predicts), they are often relying on outlier finishing—a trait that is notoriously difficult to sustain over a long tournament or season. Conversely, a team that consistently generates high xG but fails to score is often a victim of temporary variance, and statistically, they are likely to improve.
+
+**Conclusion:**
+xG is the most effective tool we have to measure the "process" of a football team. With the technological advancements coming in 2026—specifically the democratization of AI-driven analysis and the massive increase in tracking data fidelity—the ability to evaluate performance objectively will reach a new peak. We are moving away from an era where we guess why a team won, and into an era where we can quantify exactly how they created their advantage.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_071 chunk 0 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 4 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 1 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 3 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 5 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 2 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+Tool activity: knowledge_search (success)
+Turns retained: 1
+
+> ^A^C
+Stopped.
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ tactical: Remember this fictional scenario: my team is Blue Falcons, we play a 4-4-2 low block, and our main weakness is defending cutbacks. Briefly acknowledge.
+tactical:: command not found
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ python "/mnt/c/Users/hatem/Documents/Codex/2026-09-13/he/outputs/week2/test_agents.py" \
+  --repo "/home/hatem/ml/quebettra internship/Football-Analysis-RAG-mixed-test"
+Week 2 interactive check. Each question calls your configured chat API.
+Use tactical: QUESTION, statistical: QUESTION, or both: QUESTION.
+Memory stays separate for each analyst and lasts for this session. Type quit to exit.
+
+> tactical: Remember this fictional scenario: my team is Blue Falcons, we play a 4-4-2 low block, and our main weakness is defending cutbacks. Briefly acknowledge.
+
+--- TACTICAL ---
+Understood. The Blue Falcons are operating in a 4-4-2 low block. 
+
+Defending cutbacks is a systemic failure of your defensive transition and interline spacing. When you sit in a low block, your primary objective is to control the half-spaces and protect the central corridor. If you are conceding cutbacks, it indicates that your wide midfielders are failing to track the overlapping runs of the opposition full-backs, or your defensive line is collapsing too deep into the six-yard box, effectively surrendering the "edge of the box" zone to the opposition's late-arriving midfielders. 
+
+We need to address the lack of pressure on the ball carrier in the wide areas and the failure of your central midfielders to screen the cutback zone. I am ready to analyze your structural adjustments.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_034 chunk 1 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 2 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 10 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 18 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 8 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 12 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+Tool activity: knowledge_search (success)
+Turns retained: 1
+
+> tactical: What is my team's name, formation, and main weakness? Suggest one training exercise addressing that weakness.
+
+--- TACTICAL ---
+Your team is the **Blue Falcons**, you operate in a **4-4-2 low block**, and your primary tactical weakness is **defending cutbacks**.
+
+To address the vulnerability to cutbacks, you must improve the coordination between your wide midfielders and your defensive line, specifically regarding the "screening" of the penalty spot and the edge of the box.
+
+### Recommended Training Exercise: "The Cutback Containment Drill"
+
+**Setup:**
+*   Use a 40x30 yard area in the final third of the pitch.
+*   Set up a defensive unit of four defenders and two central midfielders (your 4-4-2 core) against an attacking unit of four (two wingers, two central midfielders/forwards).
+*   Place a "target zone" (a marked box) at the edge of the penalty area, roughly 12–15 yards out from the goal.
+
+**Execution:**
+1.  The attacking unit initiates play from the wide areas.
+2.  The defensive unit must maintain their 4-4-2 shape, shifting as a block toward the ball.
+3.  **The Trigger:** The attacking winger must drive toward the byline.
+4.  **The Defensive Requirement:** 
+    *   The near-side full-back engages the winger.
+    *   The near-side wide midfielder must track the overlapping run or drop to cover the space behind the full-back.
+    *   **Crucially:** The two central midfielders must drop into the "target zone" to screen the cutback pass. They must prioritize the space at the edge of the box over chasing the ball carrier.
+5.  If the ball is played back into the target zone, the central midfielders must immediately close down the space to prevent a shot.
+
+**Coaching Focus:**
+This drill forces your players to resist the urge to "ball-watch" or collapse entirely into the six-yard box. It trains the central midfielders to recognize the cutback trigger and prioritize protecting the high-percentage shooting zone at the edge of the penalty area.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_034 chunk 13 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_076 chunk 15 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_034 chunk 1 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 2 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 8 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 17 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+Tool activity: knowledge_search (success)
+Turns retained: 2
+
+> statistical: Have I told you my fictional team's name and formation in our conversation? If not, say you don't know.
+
+--- STATISTICAL ---
+I don't know. You have not provided your fictional team's name or formation in our conversation.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_071 chunk 1 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 0 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 3 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 2 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 4 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 5 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+Tool activity: knowledge_search (success)
+Turns retained: 1
+
+> statistical: Use the calculator to calculate 1.8 divided by 12. Explain the result as average xG per shot.
+
+--- STATISTICAL ---
+The result of the calculation is 0.15.
+
+In analytical terms, this represents an average Expected Goals (xG) per shot of 0.15. To put this into context, an average xG per shot of 0.15 is quite healthy; it suggests that, on average, the shots being generated are of decent quality. For comparison, a typical league-wide average often hovers around 0.10 to 0.12. A value of 0.15 indicates that the team is consistently creating opportunities that are statistically likely to result in a goal 15% of the time, rather than relying on a high volume of low-probability, long-range efforts.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_071 chunk 4 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 0 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 1 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 5 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 2 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+  doc_071 chunk 3 [keyword] https://inside.fifa.com/innovation/news/offside-decisions-referee-body-cams-innovation-world-cup-2026
+Tool activity: knowledge_search (success), calculator (success)
+Turns retained: 2
+
+> tactical: ^C
+Stopped.
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ python "/mnt/c/Users/hatem/Documents/Codex/2026-09-13/he/outputs/week2/test_agents.py" \ \
+  --repo "/home/hatem/ml/quebettra internship/Football-Analysis-RAG-mixed-test"
+Week 2 interactive check. Each question calls your configured chat API.
+Use tactical: QUESTION, statistical: QUESTION, or both: QUESTION.
+Memory stays separate for each analyst and lasts for this session. Type quit to exit.
+
+> tactical: using web search can you search the last eleven that start match for psg in the new season
+
+--- TACTICAL ---
+To provide you with the most accurate tactical assessment, I require the specific match you are referring to. PSG’s starting XI fluctuates based on the tactical requirements of the opponent, injury status, and the specific phase of the season (e.g., Champions League rotation vs. Ligue 1).
+
+If you can provide the date or the opponent of the match you are interested in, I can break down the structural setup, the intended roles of the players in that specific system, and how the manager, Luis Enrique, likely intended to manipulate the pitch space. 
+
+Without the specific fixture, I cannot provide the exact personnel, as "the new season" involves multiple matches with varying tactical adjustments. Please specify the match, and I will dissect the lineup from a structural and positional perspective.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_076 chunk 15 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 0 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 11 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 14 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 2 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 12 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_006 chunk 0 [keyword] https://theifab.com/laws/latest/the-duration-of-the-match/
+  doc_113 chunk 0 [keyword] https://theanalyst.com/articles/australia-denmark-2022-world-cup-stats
+  doc_005 chunk 0 [keyword] https://theifab.com/laws/latest/the-other-match-officials/
+  doc_006 chunk 3 [keyword] https://theifab.com/laws/latest/the-duration-of-the-match/
+  doc_010 chunk 0 [keyword] https://www.theifab.com/laws/latest/determining-the-outcome-of-a-match/
+  doc_076 chunk 0 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_006 chunk 0 [keyword] https://theifab.com/laws/latest/the-duration-of-the-match/
+  doc_113 chunk 0 [keyword] https://theanalyst.com/articles/australia-denmark-2022-world-cup-stats
+  doc_005 chunk 0 [keyword] https://theifab.com/laws/latest/the-other-match-officials/
+  doc_006 chunk 3 [keyword] https://theifab.com/laws/latest/the-duration-of-the-match/
+  doc_010 chunk 0 [keyword] https://www.theifab.com/laws/latest/determining-the-outcome-of-a-match/
+  doc_076 chunk 0 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+Tool activity: knowledge_search (success), knowledge_search (success), knowledge_search (success)
+Turns retained: 1
+
+> tactical: tell me how did argentina win thier match aganist egypt
+
+--- TACTICAL ---
+Failed: InternalServerError; HTTP status: 503.
+Check provider/model configuration and quota. No fallback opinion was generated.
+
+> tactical: tell me how did argentina win aganist egypt in thier match in world cup 2026
+
+--- TACTICAL ---
+Argentina’s 3-2 victory over Egypt in the 2026 World Cup was a classic case of a superior side struggling to break down a disciplined, low-block structure, only to win the match through a critical adjustment in their **rest defense** and counter-pressing intensity.
+
+For nearly 80 minutes, Egypt executed a masterclass in defensive organization. They did not rely on passive, deep-sitting tactics; instead, they actively managed the space between their lines. Their midfield trio—anchored by Mohanad Lasheen with Marwan Attia and Emam Ashour—worked laterally to block passing lanes, specifically neutralizing Lionel Messi by ensuring he only received the ball in areas where he could not immediately threaten the goal.
+
+Here is the tactical breakdown of how the match shifted in Argentina's favor:
+
+### 1. The Initial Stagnation
+Argentina struggled for the first hour because their attacking structure was disjointed. They had runners (like Julian Alvarez) and a creator (Messi), but the distances between them were too large. Egypt’s back four remained compact, refusing to be dragged out of position by Alvarez’s movement, which forced Messi to drop deeper to receive the ball. Once he did, he was immediately confronted by a second, well-organized defensive line.
+
+### 2. The Turning Point: Rest Defense
+The match was decided by a fundamental shift in Argentina's approach to **rest defense**—the structure a team maintains while in possession to prevent counter-attacks.
+
+As Argentina committed more players forward in search of an equalizer, conventional wisdom suggested they would become more vulnerable to Egypt’s transitions, led by Mohamed Salah. However, Argentina did the opposite:
+*   **Improved Counter-pressing:** Rodrigo De Paul, Alexis Mac Allister, and Enzo Fernandez began to collapse around the ball immediately upon losing possession.
+*   **Delaying the Transition:** This collective pressure delayed Egypt’s first forward pass just long enough for Cristian Romero and Lisandro Martinez to regain their defensive shape and compactness.
+*   **Closing the Windows:** Egypt’s transition windows, which had been open for 3–4 seconds earlier in the match, were suddenly closed almost instantly.
+
+### 3. The Result
+By tightening their rest defense, Argentina effectively removed Egypt’s "escape route." Egypt’s defensive block, which had been brilliant for 80 minutes, eventually collapsed—not because they forgot how to defend, but because they were denied the ability to breathe. Once Argentina stopped the counter-attacks, they were able to sustain pressure, eventually breaking down the Egyptian structure to secure the 3-2 win.
+
+In short, Argentina won because they recognized that to break a disciplined low block, they had to first secure their own defensive transitions, allowing them to pin Egypt back without the constant threat of a counter-attacking release.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_076 chunk 0 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 15 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 1 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 2 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 4 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 5 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 0 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 4 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 8 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 20 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 1 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 12 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+Tool activity: knowledge_search (success), knowledge_search (success)
+Turns retained: 2
+
+> ^C
+Stopped.
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ python "/mnt/c/Users/hatem/Documents/Codex/2026-09-13/he/outputs/week2/test_agents.py" \ \
+  --repo "/home/hatem/ml/quebettra internship/Football-Analysis-RAG-mixed-test"
+usage: test_agents.py [-h] --repo REPO
+test_agents.py: error: unrecognized arguments:  
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ python "/mnt/c/Users/hatem/Documents/Codex/2026-09-13/he/outputs/week2/test_agents.py" \ \
+  --repo "/home/hatem/ml/quebettra internship/Football-Analysis-RAG-mixed-test"
+usage: test_agents.py [-h] --repo REPO
+test_agents.py: error: unrecognized arguments:  
+(temporaldev) hatem@MSI:~/ml/quebettra internship/Football-Analysis-RAG-mixed-test$ python "/mnt/c/Users/hatem/Documents/Codex/2026-09-13/he/outputs/week2/test_agents.py" --repo "/home/hatem/ml/quebettra internship/Football-Analysis-RAG-mixed-test"
+Week 2 interactive check. Each question calls your configured chat API.
+Use tactical: QUESTION, statistical: QUESTION, or both: QUESTION.
+Available tools: knowledge_search, calculator, web_search.
+Memory stays separate for each analyst and lasts for this session. Type quit to exit.
+
+> tactical: Use web_search to find PSG's most recent completed competitive match as of 16 September 2026. Give the date, opponent, and starting eleven with sources. Do not guess missing information.
+
+--- TACTICAL ---
+Failed: InternalServerError; HTTP status: 503.
+Check provider/model configuration and quota. No fallback opinion was generated.
+
+> tactical: Use web_search to find PSG's most recent completed competitive match as of 16 September 2026. Give the date, opponent, and starting eleven with sources. Do not guess missing information in the french league.
+
+--- TACTICAL ---
+As of 16 September 2026, Paris Saint-Germain's most recent completed competitive match was against **AS Monaco** in Ligue 1.
+
+*   **Date:** 4 September 2026
+*   **Opponent:** AS Monaco
+*   **Result:** 1–2 (PSG loss)
+*   **Starting Eleven (4-3-3 formation):**
+    *   **Goalkeeper:** Matvey Safonov
+    *   **Defenders:** Achraf Hakimi, Marquinhos, Willian Pacho, Warren Zaïre-Emery
+    *   **Midfielders:** João Neves, Vitinha, Fabián Ruiz
+    *   **Forwards:** Désiré Doué, Maghnes Akliouche, Khvicha Kvaratskhelia
+
+*Sources: Starting11.com, Sky Sports.*
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_034 chunk 12 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 1 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 2 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 6 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 24 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 0 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  None chunk None [unknown] https://parisjetaime.com/eng/event/matches-football-paris-saint-germain-e233
+  None chunk None [unknown] https://www.psg.fr/en/mens-football/fixtures?period=Aug
+  None chunk None [unknown] https://www.espn.com/soccer/team/fixtures/_/id/160/paris-saint-germain
+  None chunk None [unknown] https://starting11.com/fixtures/paris-saint-germain-vs-monaco
+  None chunk None [unknown] https://www.rotowire.com/soccer/article/ligue-1-gw3-psg-vs-monaco-preview-and-best-bets-131795
+  None chunk None [unknown] https://www.skysports.com/football/paris-saint-germain-vs-monaco/teams/557021
+Tool activity: knowledge_search (success), web_search (success), web_search (success)
+Turns retained: 1
+
+> tacitcal: give me psg last match result as date pf 16 september.
+Example: both: How useful is xG for evaluating team performance?
+
+> tacitcal: give me psg last match result as date pf 16 september.
+Example: both: How useful is xG for evaluating team performance?
+
+> tactical: give me psg last match result as date pf 16 september.
+
+--- TACTICAL ---
+As of 16 September 2026, Paris Saint-Germain’s most recent completed competitive match was a Ligue 1 fixture against **Stade Brestois 29**.
+
+*   **Date:** 13 September 2026
+*   **Opponent:** Stade Brestois 29
+*   **Result:** 1–0 (PSG win)
+
+*Source: Official Paris Saint-Germain Fixtures & Results (psg.fr).*
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_034 chunk 12 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 1 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 6 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 18 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 23 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  doc_034 chunk 24 [keyword] https://totalfootballanalysis.com/article/tactical-theory-the-low-standard-and-high-block-tactical-analysis-tactics
+  None chunk None [unknown] https://www.psg.fr/en/mens-football/fixtures
+  None chunk None [unknown] https://www.uefa.com/uefachampionsleague/clubs/52747--paris/matches
+  None chunk None [unknown] https://www.psg.fr/en/mens-football/fixtures/season/2026-27?competition=UEFA_Champions_League
+Tool activity: knowledge_search (success), web_search (success)
+Turns retained: 2
+
+> tactical: tell me how did egypt win aganist australia in world cup 2026
+
+--- TACTICAL ---
+Egypt’s victory over Australia in the 2026 FIFA World Cup Round of 32 was a hard-fought contest decided by a penalty shootout.
+
+### Match Summary
+*   **Date:** 3 July 2026
+*   **Stage:** Round of 32
+*   **Result:** 1–1 after extra time (Egypt won 4–2 on penalties)
+
+### Tactical Breakdown
+The match was characterized by Egypt's ability to control the game's tempo despite the pressure of a knockout environment. 
+
+1.  **Regulation and Extra Time:** Egypt took an early lead through a header by Ashour. However, Australia managed to equalize—an own goal credited to Mohamed Hany—forcing the match into extra time. Statistically, Egypt held the edge in terms of quality, finishing with an expected goals (xG) of 1.36 compared to Australia's 0.87, indicating that they created the more dangerous opportunities throughout the 120 minutes.
+2.  **The Penalty Shootout:** The match was ultimately decided from the spot. Egypt demonstrated superior composure under pressure, converting all of their penalties. A notable moment was Mohamed Salah’s "impudent" Panenka, which set the tone for the shootout.
+3.  **The Deciding Moment:** Australia’s teenage player, Herrington, missed the Socceroos' fourth spot-kick, hitting the crossbar. This allowed Abdelmaguid to step up and convert the final penalty, securing a 4–2 shootout win for Egypt and sending them through to the Round of 16.
+
+From a tactical perspective, Egypt’s progression was a result of their efficiency in the final third during regulation time and their clinical execution during the high-pressure penalty phase, allowing them to overcome a resilient Australian defensive structure.
+
+Evidence retrieved (check that it actually supports the answer):
+  doc_076 chunk 0 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 15 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 4 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 5 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 8 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  doc_076 chunk 11 [keyword] https://breakingthelines.com/@keepit_tactical/argentina-vs-egypt-wc-2026-the-egyptian-miracle-that-lasted-80-minutes
+  None chunk None [unknown] https://www.espn.com/soccer/match/_/gameId/760499/egypt-australia
+  None chunk None [unknown] https://www.youtube.com/watch?v=olBx2GK7kZI&vl=en
+  None chunk None [unknown] https://www.foxsports.com/watch/fmc-yh7e0rormgv55r3f
+Tool activity: knowledge_search (success), web_search (success)
+Turns retained: 3

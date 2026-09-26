@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import AdvisorPanel from './components/AdvisorPanel';
+import useDiscussionAdvisor from './hooks/useDiscussionAdvisor';
 
 // Specialist agent registry
 const AGENTS = {
@@ -210,6 +212,8 @@ export default function App() {
   const [topicsList, setTopicsList] = useState([]);
   const [savedDiscussions, setSavedDiscussions] = useState([]);
   const [currentDiscussion, setCurrentDiscussion] = useState(null);
+  const [currentDiscussionStatus, setCurrentDiscussionStatus] = useState('unknown');
+  const [discussionLoadError, setDiscussionLoadError] = useState(null);
   const [currentAnalytics, setCurrentAnalytics] = useState(null);
   const [causalCache, setCausalCache] = useState({});
   const [isComputingCausal, setIsComputingCausal] = useState(false);
@@ -228,6 +232,11 @@ export default function App() {
 
   const timerRef = useRef(null);
   const pollTimerRef = useRef(null);
+  const discussionLoadRef = useRef(0);
+  const discussionRunRef = useRef(0);
+  const advisor = useDiscussionAdvisor(currentDiscussion, currentDiscussionStatus);
+  const advisorResponse = advisor.analysis.job?.result?.response;
+  const hasAdvisorReport = advisor.analysis.phase === 'completed' && Boolean(advisorResponse?.report);
 
   // Sync causal cache when discussion analytics loads
   React.useEffect(() => {
@@ -339,44 +348,99 @@ export default function App() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    const generation = discussionRunRef.current;
     fetch('/topics')
       .then((r) => r.json())
-      .then((d) => setTopicsList(d.topics || []))
+      .then((d) => { if (!cancelled) setTopicsList(d.topics || []); })
       .catch(console.error);
 
     refreshDiscussionsList().then((list) => {
-      if (list.length > 0) {
+      if (!cancelled && generation === discussionRunRef.current && list.length > 0) {
         loadDiscussionById(list[0].discussion_id);
       }
     });
+    return () => { cancelled = true; };
   }, []);
 
   // 3. Load Discussion by ID
-  const loadDiscussionById = async (discId) => {
+  const loadDiscussionById = async (discId, knownStatus = null) => {
     pause();
-    try {
-      const res = await fetch(`/discussions/${encodeURIComponent(discId)}`);
-      if (res.ok) {
-        const data = await res.json();
+    if (!knownStatus) {
+      discussionRunRef.current += 1;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      setIsStarting(false);
+    }
+    const generation = ++discussionLoadRef.current;
+    setCurrentDiscussionId(discId);
+    setCurrentDiscussion(null);
+    setCurrentAnalytics(null);
+    setDiscussionLoadError(null);
+    setCurrentDiscussionStatus(knownStatus || 'checking');
+    const base = `/discussions/${encodeURIComponent(discId)}`;
+    const read = async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Could not load discussion (HTTP ${response.status}).`);
+      return response.json();
+    };
+    const completion = knownStatus ? Promise.resolve({ status: knownStatus })
+      : read(`${base}/status`).catch((error) => {
+        console.error(error);
+        return { status: 'unknown' };
+      });
+    // Read the transcript after completion is confirmed. A concurrent read
+    // could otherwise return the last checkpoint just before the final save.
+    // Loading another record invalidates both pending paths together.
+    await Promise.allSettled([
+      completion.then(async (record) => {
+        const data = await read(base);
+        if (generation !== discussionLoadRef.current) return;
         setCurrentDiscussion(data);
-        setCurrentDiscussionId(discId);
-        const total = (data.messages || []).length;
-        setCursor(total > 0 ? total : 0);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
-    try {
-      const aRes = await fetch(`/discussions/${encodeURIComponent(discId)}/analytics`);
-      if (aRes.ok) {
-        const aData = await aRes.json();
-        setCurrentAnalytics(aData);
-      }
-    } catch (e) {
-      console.error(e);
-    }
+        setCursor((data.messages || []).length);
+        setCurrentDiscussionStatus(record.status || 'unknown');
+      }).catch((error) => {
+        if (generation === discussionLoadRef.current) {
+          setCurrentDiscussionStatus('unknown');
+          setDiscussionLoadError(error.message);
+        }
+        console.error(error);
+      }),
+      completion.then(() => read(`${base}/analytics`)).then((data) => {
+        if (generation === discussionLoadRef.current) setCurrentAnalytics(data);
+      }).catch(console.error),
+    ]);
   };
+
+  // Reopening an unfinished record should still lead to its final report.
+  useEffect(() => {
+    if (!currentDiscussionId || !currentDiscussion
+      || !['running', 'queued', 'unknown'].includes(currentDiscussionStatus)) return undefined;
+    let cancelled = false;
+    let timer;
+    const controller = new AbortController();
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}/status`, { signal: controller.signal });
+        if (response.ok) {
+          const data = await response.json();
+          if (cancelled) return;
+          if (['completed', 'failed'].includes(data.status)) {
+            await loadDiscussionById(currentDiscussionId, data.status);
+            return;
+          }
+        }
+      } catch (error) {
+        if (!cancelled) console.error('Discussion status check:', error);
+      }
+      if (!cancelled) timer = setTimeout(checkStatus, 2500);
+    };
+    timer = setTimeout(checkStatus, 2500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [currentDiscussionId, currentDiscussionStatus, currentDiscussion]);
 
   // 4. Play / Pause Stepper
   const play = () => {
@@ -407,7 +471,9 @@ export default function App() {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      discussionLoadRef.current += 1;
+      discussionRunRef.current += 1;
     };
   }, []);
 
@@ -417,8 +483,14 @@ export default function App() {
     if (!prompt) return;
 
     pause();
+    const generation = ++discussionRunRef.current;
+    discussionLoadRef.current += 1;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     setIsStarting(true);
     setCurrentDiscussion(null);
+    setDiscussionLoadError(null);
+    setCurrentDiscussionId(null);
+    setCurrentDiscussionStatus('running');
     setCurrentAnalytics(null);
     setProgressStatus('Generating dynamic 3v3 debate personas via LLM and initializing RAG retrieval...');
     setTab('arena');
@@ -430,6 +502,8 @@ export default function App() {
         body: JSON.stringify({ topic: prompt, num_rounds: selectedRounds, dynamic_personas: true }),
       });
 
+      if (generation !== discussionRunRef.current) return;
+
       if (!res.ok) {
         setIsStarting(false);
         alert('Could not start discussion. Check API status.');
@@ -437,26 +511,26 @@ export default function App() {
       }
 
       const d = await res.json();
+      if (generation !== discussionRunRef.current) return;
       const discId = d.discussion_id;
       setQuery('');
 
       // Begin polling the background discussion worker
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-      let attempts = 0;
-
-      pollTimerRef.current = setInterval(async () => {
-        attempts++;
+      const pollDiscussion = async () => {
+        if (generation !== discussionRunRef.current) return;
         try {
           const sRes = await fetch(`/discussions/${encodeURIComponent(discId)}/status`);
+          if (generation !== discussionRunRef.current) return;
           if (sRes.ok) {
             const sData = await sRes.json();
+            if (generation !== discussionRunRef.current) return;
             if (sData.status === 'completed') {
-              clearInterval(pollTimerRef.current);
-              setProgressStatus('Debate finished! Loading tactical synthesis...');
+              setProgressStatus('All rounds finished. Preparing the advisor report…');
               await refreshDiscussionsList();
-              await loadDiscussionById(discId);
-              setIsStarting(false);
-              setTimeout(play, 500);
+              if (generation !== discussionRunRef.current) return;
+              await loadDiscussionById(discId, 'completed');
+              if (generation === discussionRunRef.current) setIsStarting(false);
+              return;
             } else if (sData.status === 'running') {
               if (sData.current_round === 0) {
                 setProgressStatus('Generating dynamic 3v3 debate personas via LLM and formulating opening stances...');
@@ -466,26 +540,26 @@ export default function App() {
                 );
               }
             } else if (sData.status === 'failed') {
-              clearInterval(pollTimerRef.current);
               setIsStarting(false);
               // Attempt to load partial debate if available
               await refreshDiscussionsList();
-              await loadDiscussionById(discId);
+              if (generation !== discussionRunRef.current) return;
+              await loadDiscussionById(discId, 'failed');
+              return;
             }
           }
         } catch (pollErr) {
           console.error('Polling error:', pollErr);
         }
 
-        if (attempts > 120) {
-          // Timeout after ~5 minutes
-          clearInterval(pollTimerRef.current);
-          setIsStarting(false);
+        if (generation === discussionRunRef.current) {
+          pollTimerRef.current = setTimeout(pollDiscussion, 2500);
         }
-      }, 2500);
+      };
+      pollTimerRef.current = setTimeout(pollDiscussion, 2500);
     } catch (err) {
       console.error('Launch error:', err);
-      setIsStarting(false);
+      if (generation === discussionRunRef.current) setIsStarting(false);
     }
   };
 
@@ -892,7 +966,7 @@ export default function App() {
                   textWrap: 'balance',
                 }}
               >
-                Six specialist agents debate your tactical question — and converge on an answer.
+                Six specialist agents debate your question. An advisor prepares evidence-cited advice after the final round.
               </h1>
               <p
                 style={{
@@ -1050,7 +1124,7 @@ export default function App() {
                   {progressStatus}
                 </p>
                 <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
-                  Agents are querying live vector embeddings and cross-examining arguments. This usually takes 1–2 minutes.
+                  Agents are querying evidence and cross-examining arguments. The advisor report follows automatically after the final round.
                 </span>
               </div>
             )}
@@ -1083,7 +1157,7 @@ export default function App() {
                           animation: 'tiPulse 1.6s infinite',
                         }}
                       ></span>
-                      Active deliberation
+                      {currentDiscussionStatus === 'completed' ? 'Completed deliberation' : 'Active deliberation'}
                     </span>
                     <h2
                       style={{
@@ -1132,6 +1206,28 @@ export default function App() {
                       ></div>
                     </div>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <a href="#discussion-advisor" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                    <i className="ph ph-compass" aria-hidden="true"></i>
+                    {hasAdvisorReport ? 'Read advisor report' : 'Discussion advisor'}
+                  </a>
+                  <span style={{ fontSize: '12.5px', color: 'var(--color-neutral-400)' }} role="status">
+                    {advisor.analysis.phase === 'completed'
+                      ? advisorResponse?.status === 'failed'
+                        ? 'Advisor could not complete — view details below'
+                        : advisorResponse?.status === 'insufficient_evidence'
+                          ? 'Advisor needs more evidence — view details below'
+                          : advisorResponse?.status === 'partial'
+                            ? 'Partial report ready — review the evidence gaps below'
+                            : 'Report ready below the discussion'
+                      : ['submitting', 'queued', 'running'].includes(advisor.analysis.phase)
+                        ? 'Preparing advice from the finished discussion…'
+                        : advisor.analysis.phase === 'error'
+                          ? 'Advisor needs attention — view details below'
+                          : 'Advice follows once all rounds are complete'}
+                  </span>
                 </div>
 
                 {/* Specialist Agent Matrix Chips */}
@@ -1359,8 +1455,25 @@ export default function App() {
               </div>
             )}
 
+            {currentDiscussion && (
+              <AdvisorPanel
+                key={currentDiscussionId}
+                discussion={currentDiscussion}
+                discussionStatus={currentDiscussionStatus}
+                {...advisor}
+              />
+            )}
+
+            {!currentDiscussion && currentDiscussionStatus === 'checking' && (
+              <p role="status" style={{ color: 'var(--color-neutral-400)' }}>Loading discussion and checking completion…</p>
+            )}
+
+            {discussionLoadError && (
+              <p role="alert" style={{ color: 'var(--color-neutral-300)' }}>{discussionLoadError} Open the discussion from History to retry.</p>
+            )}
+
             {/* Empty state when no debate has run yet and not starting */}
-            {!currentDiscussion && !isStarting && (
+            {!currentDiscussion && !isStarting && !discussionLoadError && currentDiscussionStatus !== 'checking' && (
               <div
                 style={{
                   padding: '44px 28px',
@@ -1557,7 +1670,6 @@ export default function App() {
                     onClick={() => {
                       loadDiscussionById(h.discussion_id);
                       setTab('arena');
-                      setTimeout(play, 600);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
@@ -1602,6 +1714,13 @@ export default function App() {
 
             {currentDiscussion ? (
               <>
+                <AdvisorPanel
+                  key={currentDiscussionId}
+                  discussion={currentDiscussion}
+                  discussionStatus={currentDiscussionStatus}
+                  {...advisor}
+                />
+
                 {/* Executive Consensus Card */}
                 <div
                   style={{

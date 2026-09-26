@@ -19,6 +19,13 @@ from src.api.services.discussion_service import(
     shutdown_discussion_worker
 )
 
+# NEW: advisor endpoints and background worker.
+from src.advisor.routes import router as advisor_router
+from src.advisor.service import (
+    start_advisor_worker,
+    shutdown_advisor_worker,
+)
+
 # ── Structured Logging ──
 logging.basicConfig(
     level=logging.INFO,
@@ -75,24 +82,45 @@ def _init_database_if_needed():
 # ── Application Lifespan ──
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage worker startup and graceful shutdown."""
+    """Manage discussion and advisor workers."""
     logger.info("Starting Football Analysis Platform API server...")
     logger.info("Configured CORS origins: %s", allowed_origins)
 
     start_discussion_worker()
-    asyncio.create_task(run_in_threadpool(_init_database_if_needed))
 
     try:
+        # NEW: advisor jobs need their own background worker.
+        start_advisor_worker()
+
+        asyncio.create_task(
+            run_in_threadpool(_init_database_if_needed)
+        )
+
         yield
+
     finally:
-        logger.info("Waiting for accepted discussion jobs to finish...")
-        await run_in_threadpool(shutdown_discussion_worker)
-        logger.info("Discussion worker stopped.")
+        logger.info(
+            "Waiting for accepted background jobs to finish..."
+        )
+
+        # NEW: attempt both shutdowns even if one raises an error.
+        try:
+            await run_in_threadpool(shutdown_advisor_worker)
+        finally:
+            await run_in_threadpool(shutdown_discussion_worker)
+
+        logger.info(
+            "Discussion and advisor workers stopped."
+        )
+
 
 # ── FastAPI App Instance ──
 app = FastAPI(
     title="Football Analysis Platform API",
-    description="Unified REST API wrapping multi-agent football discussions, RAG retrieval, and intelligence analytics.",
+    description=(
+        "Multi-agent football discussions, evidence-based advice, "
+        "and intelligence analytics."
+    ),
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -107,6 +135,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 # ── Request Logging Middleware ──
@@ -163,10 +192,16 @@ app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend
 
 # ── Mount Routers ──
 app.include_router(router)
+app.include_router(advisor_router)  # NEW
 
 
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("src.api.main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        "src.api.main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+    )

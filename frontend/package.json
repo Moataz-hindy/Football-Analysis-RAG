@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
+    "test:advisor": "node src/lib/advisorClient.test.js && node src/components/AdvisorPanel.test.js",
     "preview": "vite preview --port 3000"
   },
   "dependencies": {
