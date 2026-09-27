@@ -1,4 +1,5 @@
 import React from 'react';
+import MarkdownPreview from './MarkdownPreview.jsx';
 
 /**
  * A single agent speech in the dialectical stream.
@@ -45,7 +46,11 @@ export default function SpeechCard({ agent, meta, badge, content, stats, action,
       </div>
 
       {/* Message Content */}
-      <p className="font-sans text-[13.5px] text-[#e1e1ef] leading-relaxed">{content}</p>
+      <MarkdownPreview
+        content={content}
+        className="font-sans"
+        style={{ fontSize: '13.5px', lineHeight: 1.625, color: '#e1e1ef' }}
+      />
 
       {/* Telemetry Footer Bar */}
       <div className="pt-2 flex items-center justify-between text-[11px] font-mono border-t border-white/[0.06]">
