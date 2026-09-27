@@ -7,9 +7,9 @@ sdk: docker
 app_port: 8000
 ---
 
-# Football Analysis RAG — Multi-Agent Discussion & Analytics Platform
+# Football Analysis RAG — Multi-Agent Deliberation & Intelligence Platform
 
-A **multi-agent discussion and analytics platform** built around football (soccer). The system ingests football knowledge, deploys persona-driven AI agents to debate football topics, and analyses the resulting discussions with measurable opinion dynamics, influence metrics, and automated reporting.
+A **multi-agent football intelligence and dialectical deliberation platform**. The system ingests professional football domain knowledge, orchestrates multi-agent tactical debates along strongly-connected passing graphs, tracks real-time opinion trajectories, calculates counterfactual causal influence, and serves an interactive **Touchline Intelligence** multi-page web application.
 
 ---
 
@@ -18,14 +18,17 @@ A **multi-agent discussion and analytics platform** built around football (socce
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Week-by-Week Summary](#week-by-week-summary)
+- [Touchline Intelligence Platform (Week 5)](#touchline-intelligence-platform-week-5)
+- [Configurable Agent Rosters (2–6 Agents)](#configurable-agent-rosters-26-agents)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
 - [Setup & Installation](#setup--installation)
-- [Running the Full Pipeline](#running-the-full-pipeline)
-- [Analytics & Reporting (Week 4)](#analytics--reporting-week-4)
+- [Running the Platform](#running-the-platform)
+- [Analytics & Reporting](#analytics--reporting)
+- [API Reference](#api-reference)
 - [Testing](#testing)
 - [Design Decisions](#design-decisions)
-- [Known Limitations](#known-limitations)
+- [Historical Turn Latencies](#historical-turn-latencies)
 - [Tech Stack](#tech-stack)
 - [Documentation Index](#documentation-index)
 
@@ -33,43 +36,44 @@ A **multi-agent discussion and analytics platform** built around football (socce
 
 ## Overview
 
-This project was built across four development weeks, each adding a new layer:
+The platform spans five integrated layers:
 
 ```text
-Week 1: Knowledge Infrastructure
+Week 1: Knowledge Infrastructure (PostgreSQL 16 + pgvector / SQLite Fallback)
          │
          ▼
-Week 2: Intelligent Agents
+Week 2: Intelligent Persona Agents (6 Specialists, Tool Registry, VADER)
          │
          ▼
-Week 3: Multi-Agent Discussion System
+Week 3: Multi-Agent Dialectical Deliberation (NetworkX Routing, 2-6 Agents)
          │
          ▼
-Week 4: Analytics & Intelligence Layer
+Week 4: Analytics & Intelligence Layer (Stance, Agreement, Causal Ablation)
          │
          ▼
-Week 5: Dashboard (upcoming)
+Week 5: Touchline Intelligence Platform (FastAPI + Vite/React Multi-Page App)
 ```
 
-The end-to-end flow is:
+The end-to-end deliberation and analytics workflow:
 
 ```text
-Web Pages ──▶ RAG Knowledge Base ──▶ 6 Persona Agents ──▶ Multi-Round Discussion
-                                                                    │
-                                                                    ▼
-                                                        ┌───────────────────────┐
-                                                        │   Analytics Engine    │
-                                                        ├───────────────────────┤
-                                                        │ Opinion Trajectories  │
-                                                        │ Agreement Scores      │
-                                                        │ Influence Metrics     │
-                                                        │ Sentiment Analysis    │
-                                                        └───────────┬───────────┘
-                                                                    │
-                                                          ┌─────────┴─────────┐
-                                                          ▼                   ▼
-                                                    Auto Report         Visualizations
-                                                     (.md)          (trajectory + graph)
+Football Web Sources ──▶ RAG Embeddings (1024-D) ──▶ Persona Agents (2 to 6)
+                                                               │
+                                                               ▼
+Live Arena Stepper ◀── Turn Checkpoints ◀── NetworkX Graph Deliberation
+        │                                                      │
+        ▼                                                      ▼
+Interactive Pitch                                   ┌───────────────────────┐
+Passing Routes                                      │   Analytics Engine    │
+                                                    ├───────────────────────┤
+                                                    │ Stance Trajectories   │
+                                                    │ Consensus Tracking    │
+                                                    │ Causal Influence (τ)  │
+                                                    │ Executive Synthesis   │
+                                                    └───────────┬───────────┘
+                                                                ▼
+                                                    Intelligence Dashboard
+                                                     (/intel & REST API)
 ```
 
 ---
@@ -80,44 +84,60 @@ Web Pages ──▶ RAG Knowledge Base ──▶ 6 Persona Agents ──▶ Mult
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Week 1: Knowledge Layer                            │
 │                                                                             │
-│  Web Pages ──▶ Collector ──▶ Cleaner ──▶ Chunker & Embedder ──▶ PostgreSQL │
-│  (80+ URLs)   collect.py    clean.py    process_all.py          + pgvector  │
+│  Web Sources ──▶ Collector ──▶ Cleaner ──▶ Chunker & Embedder ──▶ Database │
+│  (80+ URLs)     collect.py    clean.py    process_all.py        Postgres/   │
+│                                                                 pgvector    │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ vector search
+                                       │ vector search (cosine distance)
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
 │                       Week 2: Agent Layer                                   │
 │                                                                             │
-│  6 Persona Agents (YAML-defined)                                           │
-│  ├── LLM Adapter (OpenAI-compatible)                                       │
-│  ├── Conversation Memory                                                   │
-│  ├── RAG Retrieval (KnowledgeSearchTool)                                   │
-│  ├── Tool Registry (Calculator, Web Search)                                │
-│  └── VADER Sentiment Scorer                                                │
+│  Specialist Personas (YAML-defined)                                        │
+│  ├── LLM Adapter (OpenAI-compatible, Cerebras qwen-3.8-27b)                │
+│  ├── Conversation Memory with sliding-window summarization                  │
+│  ├── RAG Retrieval (KnowledgeSearchTool) & WebSearchTool (Tavily)          │
+│  ├── CalculatorTool for mathematical & metric validation                    │
+│  └── VADER Lexicon Sentiment Scorer                                         │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
 │                     Week 3: Discussion Layer                                │
 │                                                                             │
-│  Discussion Orchestrator                                                   │
-│  ├── Graph-Based Message Routing (NetworkX)                                │
-│  ├── Multi-Round Discussions (initial opinions + N rounds)                  │
-│  ├── Per-Agent Opinion Evolution Tracking                                  │
-│  └── Persistent Discussion Records (outputs/*.json)                        │
+│  Discussion Orchestrator (src/discussion/orchestrator.py)                   │
+│  ├── Graph Message Routing (NetworkX ring + chord topology)                │
+│  ├── Multi-Round Discussions (Opening statements + N rounds)                │
+│  ├── Configurable Rosters: 2, 3, 4, 5, or 6 Specialist Agents              │
+│  ├── Turn-by-Turn Checkpointing to outputs/{id}.json                       │
+│  └── In-Flight Memory Tracking for live status inspection                   │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
 │                     Week 4: Analytics Layer                                 │
 │                                                                             │
 │  Analytics Engine (src/analytics/engine.py)                                │
-│  ├── Task 1: Stance Trajectories & Opinion Change (stance.py)              │
-│  ├── Task 2: Pairwise Agreement Scoring (agreement.py)                     │
-│  ├── Task 3: Distance-Reduction Influence (influence.py)                   │
-│  ├── Task 4: VADER Sentiment per Message (sentiment.py)                    │
-│  ├── Task 5: Correlation-Based Influence (correlation_influence.py)        │
-│  ├── Data Validation (validation.py)                                       │
-│  ├── Opinion Trajectory Chart (visualization/opinion_trajectory.py)        │
-│  ├── Interaction Graph (visualization/interaction_graph.py)                │
-│  └── Markdown Report Generator (reporting/report.py)                       │
+│  ├── Task 1: Stance Trajectories & Shift Detection (stance.py)              │
+│  ├── Task 2: Pairwise Consensus Agreement (agreement.py)                   │
+│  ├── Task 3: Counterfactual Causal Ablation (causal_influence.py)          │
+│  ├── Task 4: Message Sentiment Distribution (sentiment.py)                  │
+│  ├── Task 5: Pearson Correlation Influence (correlation_influence.py)       │
+│  └── LLM Executive Synthesis & Tactical Narrative (synthesis.py)            │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                  Week 5: Application & Platform Layer                       │
+│                                                                             │
+│  FastAPI Backend (:8000)                                                    │
+│  ├── Multi-Tenant SQLite/PostgreSQL Database (Tenant Profiles & Personas)   │
+│  ├── Discussion Worker Pool with Queue Depth Limiting & Graceful Shutdown   │
+│  ├── Trailing-Comma Middleware & Path Traversal Sanitizers                  │
+│  └── REST Endpoints: /discussions, /analytics, /auth, /profile, /personas   │
+│                                                                             │
+│  Vite + React 18 Multi-Page Frontend (:5173 / :3000 / /app)                 │
+│  ├── Deep-Linkable Routes: /arena, /history, /intel, /devops                │
+│  ├── Real-Time Streaming Transcript with Live-Edge Auto-Follow              │
+│  ├── Interactive Tactical Pitch & Passing Graph Visualizer                  │
+│  ├── Configurable Deliberation Stepper (Rounds & Agents Selector)           │
+│  └── Claude Nocturne Design System (Glassmorphic Dark Mode)                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -126,450 +146,353 @@ Web Pages ──▶ RAG Knowledge Base ──▶ 6 Persona Agents ──▶ Mult
 ## Week-by-Week Summary
 
 ### Week 1 — Knowledge Infrastructure
-
-Built the RAG (Retrieval-Augmented Generation) pipeline:
-
-- **Collected** 80+ football web pages (IFAB laws, analytics explainers, tactical guides, World Cup match reports)
-- **Cleaned** HTML to plain text with noise removal and mojibake repair
-- **Chunked & embedded** documents (1,200 chars, 200-char overlap) using OpenRouter embeddings (1,024 dims)
-- **Ingested** into PostgreSQL 16 + pgvector with IVFFlat cosine index
-- **Search** via cosine similarity returns top-k relevant chunks
-- **Evaluated** with 7-query benchmark (Precision@5, Recall@5, MRR)
+- **Collected** 80+ football web resources (IFAB Laws of the Game, tactical guides, World Cup match reports).
+- **Cleaned** raw HTML to structured text with boilerplate stripping and character normalisation.
+- **Chunked & embedded** documents (1,200 chars with 200-char overlap) producing 1,024-dimensional vectors.
+- **Ingested** into PostgreSQL 16 + pgvector with cosine similarity indexing.
+- **Evaluated** with retrieval benchmarks (Precision@5, Recall@5, MRR) across curated tactical queries.
 
 ### Week 2 — Intelligent Agents
-
-Built persona-driven AI agents:
-
-- **6 specialist personas** defined in YAML: Tactical, Statistical, Fan, Refereeing, Performance, Context analysts
-- **LLM adapter** supporting OpenAI-compatible APIs (OpenRouter, local models)
-- **Conversation memory** with sliding window and context management
-- **Tool system**: KnowledgeSearchTool (Week 1 RAG), CalculatorTool, WebSearchTool
-- **VADER sentiment** scoring on every agent message
+- **6 specialist personas** defined in YAML: Tactical Analyst, Statistical Analyst, Fan Voice, Refereeing Analyst, Performance Analyst, and Historical Context Analyst.
+- **Unified LLM adapter** speaking the OpenAI wire protocol, supporting Cerebras, Groq, OpenRouter, and local endpoints.
+- **Conversation memory** with sliding windows and automatic summarisation.
+- **Tool system**: `KnowledgeSearchTool` (RAG vector database), `CalculatorTool`, and `WebSearchTool` (Tavily).
+- **VADER sentiment** scoring per turn.
 
 ### Week 3 — Multi-Agent Discussion System
-
-Built the discussion orchestrator:
-
-- **Graph-based routing** — agents communicate along a predefined NetworkX graph
-- **Multi-round discussions** — initial opinions → N discussion rounds with routed messages
-- **Opinion evolution** — tracks stance changes with `changed_from_previous` flag and `change_reason`
-- **Mid-discussion retrieval** — agents query the Week 1 knowledge base during discussions
-- **Persistent records** — full discussion history saved as `outputs/{discussion_id}.json`
-- **Reproducible runs** — reload any discussion by ID for inspection or analytics
+- **NetworkX graph routing** directing messages between opposing and complementary analyst roles.
+- **Multi-round debates** proceeding from initial opening statements through iterative peer critique rounds.
+- **Live checkpointing** saving debate state to disk immediately after each agent turn.
+- **Opinion evolution tracking** recording stance movements and change rationales.
+- **Graceful degradation** enabling offline discussions when vector databases are unavailable.
 
 ### Week 4 — Analytics & Intelligence Layer
+- **Opinion Trajectories**: Numeric stance scoring `[-1.0, +1.0]` with fast-fail local embedding fallbacks.
+- **Consensus Agreement**: Pairwise discussion agreement score `A = 1 - D_mean / 2`.
+- **Causal Influence Ablation**: Counterfactual exchange ablation calculating each agent's true persuasive power ($\tau$).
+- **Sentiment Profiling**: Distribution of sentiment shifts across debate rounds.
+- **Executive Synthesis**: Automated LLM tactical narrative and peer critique summaries.
+- **Fabrication-Free Honesty**: Unscored or offline items remain honest `null` rather than generating synthetic heuristic data.
 
-Built the analytics engine on top of Week 3 discussions:
+### Week 5 — Touchline Intelligence Platform
+- **FastAPI REST API**: Asynchronous backend managing discussion worker queues, analytics caching, and platform authentication.
+- **Vite + React 18 Frontend**: Futuristic glassmorphic tactical interface built on Claude Nocturne design principles.
+- **Multi-Page HTML Architecture**: Deep-linkable independent HTML entry points (`/arena`, `/history`, `/intel`, `/devops`).
+- **Live Stream Deliberation**: Real-time transcript streaming onto the pitch and dialogue stream without full-page reloads.
+- **Configurable Agent Roster**: On-demand selection of 2 to 6 agents with dynamic strongly-connected topologies.
+- **Multi-Tenant Scouting Profiles**: Role-based profiles (Scout, Head Coach, Tactical Analyst) with custom persona managers.
 
-| Component | Description | Module |
-|-----------|-------------|--------|
-| **Opinion Change** | Per-agent, per-round numeric stance [-1, +1] with 3-tier scoring (rules/embeddings/LLM) | `src/analytics/stance.py` |
-| **Agreement** | Per-round pairwise agreement score: `A = 1 - D_mean/2` | `src/analytics/agreement.py` |
-| **Influence** | Distance-reduction metric + Pearson correlation-based influence | `src/analytics/influence.py`, `correlation_influence.py` |
-| **Sentiment** | Per-message VADER compound scores with label counts | `src/analytics/sentiment.py` |
-| **Unified Engine** | Single entry point returning all 4 categories | `src/analytics/engine.py` |
-| **Data Validation** | Pre-analytics validation of discussion structure | `src/analytics/validation.py` |
-| **Opinion Trajectory** | Multi-agent stance chart (matplotlib) | `src/visualization/opinion_trajectory.py` |
-| **Interaction Graph** | Weighted directed agent network (networkx + matplotlib) | `src/visualization/interaction_graph.py` |
-| **Report Generator** | Auto Markdown report with all 4 metrics + findings | `src/reporting/report.py` |
+---
+
+## Touchline Intelligence Platform (Week 5)
+
+The frontend application provides four distinct operational views:
+
+| View | Path | Description |
+| :--- | :--- | :--- |
+| **Landing** | `/` | Animated hero pitch simulating live passing routes, metric badges, and quick demo onboarding. |
+| **Arena** | `/arena` | Main deliberation deck. Select debate topic, round count (2–5), and agent roster (2–6). Watch turns stream live. |
+| **History** | `/history` | Catalog of past deliberations with live status badges (`Queued in Worker`, `Deliberating Live`, `Watch Live`, `Resume / Replay`). |
+| **Intelligence**| `/intel` | Analytical command center. Displays consensus charts, stance trajectory lines, causal persuasion scores, and tactical synthesis. |
+| **DevOps** | `/devops` | Platform telemetry, database status, API health, active CORS origins, and worker queue depths. |
+
+---
+
+## Configurable Agent Rosters (2–6 Agents)
+
+Users can scale deliberations from focused 1v1 tactical clashes up to full 6-agent panel debates:
+
+| Preset | Agent Count | Participating Personas | Graph Topology |
+| :--- | :---: | :--- | :--- |
+| **Head-to-Head** | **2** | Tactical Analyst, Statistical Analyst | Bidirectional 2-node clash |
+| **Triad** | **3** | Tactical, Statistical, Performance | Bidirectional triangle with cross-chords |
+| **Tactical Box** | **4** | Tactical, Statistical, Performance, Context | 4-node ring with opposing diagonals |
+| **Pentagram** | **5** | Tactical, Statistical, Performance, Context, Refereeing | 5-node ring with cross-thematic bridges |
+| **Full Pitch 3v3**| **6** | All 6 specialist personas | Symmetrical cross-camp debate network |
+
+Every generated subgraph is mathematically guaranteed to be **strongly connected** (`nx.is_strongly_connected(graph)`), ensuring complete dialectical propagation across all rounds.
 
 ---
 
 ## Project Structure
 
-```
+```text
 Football-Analysis-RAG/
-├── data/
-│   ├── raw/                    # Scraped HTML documents (JSON) — 83 files
-│   ├── clean/                  # Cleaned plain-text documents (JSON) — 81 files
-│   └── embeddings/             # Chunks with vector embeddings (JSON) — 81 files
-│
-├── docs/                       # Architecture & metric documentation
-│   ├── week4_analytics_guide.md    # Full analytics formulas & API reference
-│   ├── week4_tasks_1_2_3.md        # Task implementation details
-│   ├── discussion_architecture.md  # Week 3 orchestrator design
-│   ├── graph_and_routing.md        # Message routing documentation
-│   ├── sentiment_and_analytics.md  # Sentiment integration notes
-│   └── evaluation.md              # Week 1 retrieval evaluation
-│
-├── personas/                   # Agent persona definitions (YAML)
-│   ├── tactical_analyst.yaml
-│   ├── statistical_analyst.yaml
-│   ├── fan_analyst.yaml
-│   ├── refereeing_analyst.yaml
-│   ├── performance_analyst.yaml
-│   └── context_analyst.yaml
+├── frontend/                   # Week 5: Touchline Intelligence React App
+│   ├── src/
+│   │   ├── components/         # UI views, pitch visualizers, modals
+│   │   │   ├── AgentCommunicationPitch.jsx  # Interactive passing pitch graph
+│   │   │   ├── LandingPage.jsx              # Hero landing page
+│   │   │   ├── MarkdownPreview.jsx          # Compiled markdown renderer
+│   │   │   ├── SpeechCard.jsx               # Dialectical speech bubble
+│   │   │   ├── HistoryView.jsx              # History cards with status badges
+│   │   │   ├── AuthModal.jsx                # Multi-tenant authentication
+│   │   │   └── ProfileModal.jsx             # Scouting persona configuration
+│   │   ├── App.jsx             # Core application shell & live streaming logic
+│   │   └── index.css           # Claude Nocturne CSS design system
+│   ├── arena.html              # Multi-page entry point: Arena view
+│   ├── history.html            # Multi-page entry point: History view
+│   ├── intel.html              # Multi-page entry point: Intelligence view
+│   ├── devops.html             # Multi-page entry point: DevOps view
+│   ├── index.html              # Multi-page entry point: Landing view
+│   ├── vite.config.js          # Multi-page rollup configuration & dev proxy
+│   └── package.json
 │
 ├── src/
-│   ├── ingestion/              # Week 1: Web scraping & cleaning
-│   │   ├── collect.py
-│   │   └── clean.py
+│   ├── api/                    # Week 5: FastAPI REST Backend
+│   │   ├── main.py             # Server lifecycle, middleware, routing
+│   │   ├── routes.py           # Core discussion & analytics endpoints
+│   │   ├── platform_routes.py  # Auth, profile, and persona endpoints
+│   │   ├── schemas.py          # Pydantic request & response models
+│   │   └── services/
+│   │       ├── discussion_service.py # Worker pool & in-flight tracking
+│   │       └── analytics_service.py  # Cached analytics orchestration
 │   │
-│   ├── rag/                    # Week 1: RAG pipeline
-│   │   ├── process_all.py      # Chunking & embedding
-│   │   ├── ingest.py           # PostgreSQL ingestion
-│   │   ├── search.py           # Vector similarity search
-│   │   └── evaluate.py         # Retrieval benchmark
+│   ├── platform/               # Week 5: Multi-Tenant Platform Engine
+│   │   ├── db.py               # SQLite fallback & PostgreSQL connection
+│   │   ├── auth.py             # Session token & tenant verification
+│   │   ├── profile.py          # Scout/Coach persona preferences
+│   │   └── models.py           # Platform SQL database models
 │   │
-│   ├── agent/                  # Week 2: Intelligent agents
-│   │   ├── agent.py            # Core Agent class
-│   │   ├── llm.py              # OpenAI-compatible LLM adapter
-│   │   ├── memory.py           # Conversation memory
-│   │   ├── persona.py          # Persona dataclass
-│   │   ├── persona_loader.py   # YAML persona loader
-│   │   ├── retrieval.py        # RAG retrieval interface
-│   │   ├── sentiment.py        # VADER sentiment scorer
-│   │   ├── tool_registery.py   # Tool registry
-│   │   └── types.py            # Agent response types
+│   ├── discussion/             # Week 3: Deliberation Orchestrator
+│   │   ├── orchestrator.py     # Multi-round debate orchestration
+│   │   ├── graph.py            # Symmetrical & dynamic NetworkX graphs
+│   │   ├── router.py           # Stateless graph message router
+│   │   ├── persistence.py      # Discussion serialization & checkpoints
+│   │   └── run_discussion.py   # CLI debate runner with --agents support
 │   │
-│   ├── tools/                  # Week 2: Agent tools
-│   │   ├── calculator.py
-│   │   ├── knowledge_search.py # Week 1 RAG integration
-│   │   └── web_search.py
+│   ├── agent/                  # Week 2: Intelligent Agents
+│   │   ├── agent.py            # Core Agent implementation & tool loop
+│   │   ├── llm.py              # OpenAI-compatible client with pace budgets
+│   │   ├── memory.py           # Context management & summarisation
+│   │   ├── retrieval.py        # Knowledge base retrieval adapter
+│   │   └── persona_loader.py   # YAML persona specification loader
 │   │
-│   ├── discussion/             # Week 3: Discussion system
-│   │   ├── orchestrator.py     # Multi-round discussion orchestrator
-│   │   ├── graph.py            # Agent communication graph
-│   │   ├── router.py           # Graph-based message router
-│   │   ├── persistence.py      # Discussion save/load (JSON)
-│   │   ├── run_discussion.py   # CLI to run a discussion
-│   │   ├── types.py            # DiscussionResult, OpinionSnapshot, etc.
-│   │   └── models.py           # Discussion data models
+│   ├── analytics/              # Week 4: Analytics Engine
+│   │   ├── engine.py           # Unified analytics coordinator
+│   │   ├── stance.py           # Numeric stance projection & honest nulls
+│   │   ├── agreement.py        # Pairwise consensus metric calculation
+│   │   ├── causal_influence.py # Counterfactual causal ablation scorer
+│   │   └── synthesis.py        # LLM tactical executive narrative
 │   │
-│   ├── analytics/              # Week 4: Analytics engine
-│   │   ├── engine.py           # Unified AnalyticsEngine class
-│   │   ├── stance.py           # 3-tier stance scoring
-│   │   ├── agreement.py        # Pairwise agreement metric
-│   │   ├── influence.py        # Distance-reduction influence
-│   │   ├── correlation_influence.py  # Pearson correlation influence
-│   │   ├── sentiment.py        # Discussion sentiment analysis
-│   │   ├── validation.py       # Input data validation
-│   │   ├── models.py           # Pydantic analytics models
-│   │   └── run_analytics.py    # CLI analytics pipeline
-│   │
-│   ├── visualization/          # Week 4: Charts & graphs
-│   │   ├── opinion_trajectory.py   # Multi-agent stance trajectory chart
-│   │   └── interaction_graph.py    # Weighted agent interaction network
-│   │
-│   └── reporting/              # Week 4: Report generation
-│       └── report.py           # Automatic Markdown report
+│   ├── tools/                  # Agent tools (Calculator, WebSearch, RAG)
+│   ├── rag/                    # Week 1: Knowledge vector pipeline
+│   └── ingestion/              # Week 1: Scraping & cleaning tools
 │
-├── tests/                      # Test suite (20 test files)
-├── reports/                    # Generated reports & visualizations
-├── outputs/                    # Saved discussion JSON files
-├── scripts/                    # Utility & manual test scripts
-├── sql/                        # PostgreSQL schema (init_db.sql)
-│
-├── requirements.txt            # Python dependencies
-├── requirements-analytics-embeddings.txt  # Optional: sentence-transformers
-├── docker-compose.yml          # PostgreSQL + pgvector container
-├── .env.example                # Environment variable template
-├── week2.md                    # Week 2 specification
-├── week3.md                    # Week 3 specification
-└── week4.md                    # Week 4 specification
+├── sql/migrations/             # Multi-tenant SQL migrations
+├── personas/                   # Specialist YAML persona files
+├── outputs/                    # Persisted deliberation JSON records
+├── reports/                    # Generated charts & cached analytics
+└── tests/                      # Pytest suite
 ```
 
 ---
 
 ## Prerequisites
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| **Python** | 3.10+ | Run all scripts |
-| **Docker** | 20+ | Host PostgreSQL + pgvector |
-| **Docker Compose** | v2+ | Spin up the database container |
-| **OpenRouter API Key** | — | LLM calls & embeddings |
+- **Python 3.10+**
+- **Node.js 18+** & **npm**
+- **PostgreSQL 16** with `pgvector` *(optional: system automatically falls back to embedded SQLite if unavailable)*
+- An **OpenAI-compatible LLM endpoint** (e.g. [Cerebras](https://cerebras.ai/) using `qwen-3.8-27b`, Groq, or OpenRouter)
 
 ---
 
 ## Setup & Installation
 
+### 1. Clone & Python Environment
+
 ```bash
-# 1. Clone and enter the project
 git clone https://github.com/Moataz-hindy/Football-Analysis-RAG.git
 cd Football-Analysis-RAG
 
-# 2. Create and activate a virtual environment
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # macOS / Linux
-
-# 3. Install dependencies
+python -m venv .venv
+source .venv/bin/activate       # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 4. Configure environment variables
-cp .env.example .env
-# Edit .env with your API key and database credentials
-
-# 5. Start PostgreSQL + pgvector
-docker-compose up -d
 ```
 
-### Environment Variables
+### 2. Configure Environment (`.env`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_HOST` | Database host | `localhost` |
-| `DB_PORT` | Database port | `5432` |
-| `DB_NAME` | Database name | `football_intelligence` |
-| `DB_USER` | Database user | `postgres` |
-| `DB_PASSWORD` | Database password | — |
-| `OPENAI_API_KEY` | OpenRouter API key | — |
-| `OPENROUTER_MODEL` | Embedding model | `liquid/lfm-2.5-embedding-350m:free` |
-| `LLM_MODEL` | Chat model for agents | — |
-| `LLM_TEMPERATURE` | LLM temperature | `0.7` |
+Create or update `.env` in the repository root:
+
+```ini
+# LLM Provider (Cerebras fast inference recommended)
+LLM_API_KEY=your_cerebras_or_openai_key
+LLM_BASE_URL=https://api.cerebras.ai/v1
+LLM_MODEL=qwen-3.8-27b
+LLM_TEMPERATURE=0.2
+
+# Request pacing and retry budgets
+LLM_RETRY_MAX_WAIT_SECONDS=120
+LLM_MAX_RETRIES=2
+LLM_PACER_MAX_PER_MINUTE=20
+LLM_PACER_MAX_PER_HOUR=300
+
+# Optional Web Search
+TAVILY_API_KEY=your_tavily_key
+
+# Optional Vector Database (PostgreSQL)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=football_intelligence
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+### 3. Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
 
 ---
 
-## Running the Full Pipeline
+## Running the Platform
 
-### Step 1 — Build the Knowledge Base (Week 1)
+### Option A: Complete Web Experience (Recommended)
 
+Start the FastAPI backend and the Vite development server in two separate terminals:
+
+**Terminal 1 — Backend API:**
 ```bash
-python src/ingestion/collect.py      # Scrape 80+ football web pages
-python src/ingestion/clean.py        # Clean HTML to plain text
-python -m src.rag.process_all        # Chunk & embed documents
-python -m src.rag.ingest             # Load into PostgreSQL
+python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Step 2 — Search the Knowledge Base
-
+**Terminal 2 — Frontend Application:**
 ```bash
-python src/rag/search.py "What is expected goals (xG)?"
+cd frontend
+npm run dev
 ```
 
-### Step 3 — Run a Multi-Agent Discussion (Week 3)
+Open **`http://localhost:5173/`** in your browser to command deliberations, stream live messages, and view intelligence metrics.
+
+### Option B: Standalone Production API Serving
+
+The backend directly serves the compiled frontend bundle at `/app`:
 
 ```bash
-# Run a full 6-agent, 3-round discussion
-python -m src.discussion.run_discussion
+python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+```
+Visit **`http://localhost:8000/app`** for the frontend, or **`http://localhost:8000/docs`** for interactive Swagger API documentation.
 
-# Or with a custom topic and ID
+### Option C: CLI Discussion Runner
+
+Run a debate directly from the terminal with custom rounds and agent counts:
+
+```bash
+# 2-Agent Head-to-Head Debate (2 Rounds)
 python -m src.discussion.run_discussion \
-  --topic "Was Argentina the better team in the 2022 World Cup final?" \
-  --discussion-id my_run_01 \
-  --rounds 3
-```
+  --topic "Evaluate Argentina's defensive transition against France in the 2022 Final" \
+  --rounds 2 \
+  --agents 2 \
+  --discussion-id "arg-fra-2p"
 
-The discussion is saved to `outputs/{discussion_id}.json`.
-
-### Step 4 — Run Analytics (Week 4)
-
-```bash
-# Run the full analytics pipeline on a saved discussion
-python -m src.analytics.run_analytics outputs/{discussion_id}.json
-
-# With visualizations and report
-python -m src.analytics.run_analytics outputs/{discussion_id}.json \
-  --generate-charts \
-  --generate-report
-
-# With LLM-based stance scoring (requires API key)
-python -m src.analytics.run_analytics outputs/{discussion_id}.json \
-  --use-llm \
-  --generate-charts \
-  --generate-report
-```
-
-### Step 5 — Re-inspect a Discussion
-
-```bash
-python -c "
-from src.discussion import load_discussion_by_id
-r = load_discussion_by_id('my_run_01')
-print(r.config.topic, len(r.messages), 'messages')
-"
+# Full 6-Agent Symmetrical Debate
+python -m src.discussion.run_discussion \
+  --topic "Did Japan's 5-4-1 low block expose Spain's central progression limits?" \
+  --rounds 3 \
+  --agents 6
 ```
 
 ---
 
-## Analytics & Reporting (Week 4)
+## Analytics & Reporting
 
-### Analytics Engine
+Compute multi-dimensional analytics for any completed deliberation:
 
-The unified analytics engine processes a saved discussion and returns all four metric categories:
-
-```python
-from src.analytics.engine import AnalyticsEngine
-from src.discussion.persistence import load_discussion
-
-engine = AnalyticsEngine(reports_dir="reports")
-discussion = load_discussion("outputs/my_run_01.json")
-
-result = engine.analyze(
-    discussion,
-    generate_charts=True,
-    generate_report=True,
-)
-
-# Access individual results
-print(result["task1_opinion_trajectories"])  # Per-agent stance series
-print(result["task2_agreement"])             # Per-round agreement scores
-print(result["task3_influence"])             # Per-agent influence scores
-print(result["task4_sentiment"])             # Per-message sentiment
+```bash
+python -m src.analytics.run_analytics \
+  --input outputs/arg-fra-2p.json \
+  --output-dir reports \
+  --use-embeddings
 ```
 
-### Metric Definitions
+### Analytics Output:
+1. **Opinion Trajectories**: Sequential numeric stance changes across rounds.
+2. **Agreement Matrix**: Pairwise consensus distance over time.
+3. **Counterfactual Causal Ablation**: Quantified persuasion score ($\tau$) assessing how much each analyst moved peer opinions.
+4. **Sentiment Breakdown**: VADER sentiment distribution per agent and round.
+5. **Visual Charts**: Matplotlib-generated stance trajectory curves and weighted network graphs.
 
-| Metric | Formula | Range | Interpretation |
-|--------|---------|-------|----------------|
-| **Stance** | Text-to-numeric scoring (rules/embeddings/LLM) | [-1.0, +1.0] | +1 = positive pole, -1 = negative pole |
-| **Opinion Change** | `S(r) - S(r-1)` | [-2.0, +2.0] | Direction & magnitude of shift |
-| **Agreement** | `A = 1 - D_mean / 2` | [0.0, 1.0] | 1.0 = perfect consensus, 0.0 = total polarization |
-| **Influence** | Distance-reduction pull metric | varies | Higher = stronger estimated influence |
-| **Correlation Influence** | Pearson r between messages and stance changes | [-1.0, +1.0] | Association (not causation) |
-| **Sentiment** | VADER compound score | [-1.0, +1.0] | Positive/neutral/negative tone |
+---
 
-### Generated Outputs
+## API Reference
 
-```
-reports/
-├── discussion_report_{id}.md           # Markdown report with all 4 metrics
-├── opinion_trajectory_{id}.png         # Multi-agent stance chart
-└── interaction_graph_{id}.png          # Weighted agent network graph
-```
-
-### Opinion Trajectory Chart
-
-Shows each agent's numeric stance across discussion rounds:
-
-- X-axis: discussion rounds
-- Y-axis: stance score [-1, +1]
-- Each agent has a distinct colour and marker
-- Final stance values annotated
-- Largest single-round change highlighted
-
-### Interaction Graph
-
-Shows the agent communication network:
-
-- Agents as coloured nodes
-- Directed edges for message routes
-- Edge weights reflecting message volume
-- Curved bidirectional arrows for reciprocal communication
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Server heartbeat and database connectivity check. |
+| `GET` | `/topics` | Curated tactical football debate topics. |
+| `POST` | `/discussions` | Launch a debate (`topic`, `num_rounds`, `num_agents`, optional `discussion_id`). |
+| `GET` | `/discussions` | List all saved and in-flight discussions with live status. |
+| `GET` | `/discussions/{id}` | Retrieve complete transcript and configuration for a deliberation. |
+| `GET` | `/discussions/{id}/status` | Poll runtime execution progress (`queued`, `running`, `completed`). |
+| `GET` | `/discussions/{id}/analytics` | Compute or load cached stance trajectories, agreement, and influence. |
+| `POST`| `/discussions/{id}/causal-analysis` | Execute counterfactual exchange ablation to score true causal impact. |
+| `POST`| `/auth/login` | Multi-tenant scout/coach authentication. |
+| `GET` | `/profile` | Active user tactical preferences and personal scouting dossier. |
+| `POST`| `/personas` | Create and customize dynamic analyst personas. |
 
 ---
 
 ## Testing
 
+Execute the comprehensive offline test suite:
+
 ```bash
-# Run all tests
-python -m pytest tests/ -v
+# Run test suite
+python -m pytest tests/ -q
 
-# Run specific test suites
-python -m pytest tests/test_acceptance_week4.py -v    # Week 4 acceptance tests
-python -m pytest tests/test_opinion_visualization.py -v  # Opinion chart tests
-python -m pytest tests/test_analytics_stance.py -v    # Stance scoring tests
-python -m pytest tests/test_analytics_agreement.py -v # Agreement tests
-python -m pytest tests/test_analytics_influence.py -v # Influence tests
-
-# Run Week 1 evaluation
-python src/rag/evaluate.py
+# Run platform multi-tenant tests
+python -m pytest tests/test_platform.py -v
 ```
-
-### Test Coverage
-
-| Area | Test File | Tests |
-|------|-----------|-------|
-| Week 4 acceptance | `test_acceptance_week4.py` | Full pipeline, reports, visualizations |
-| Opinion trajectory | `test_opinion_visualization.py` | Chart generation, agents, rounds, edge cases |
-| Stance scoring | `test_analytics_stance.py` | 3-tier scoring, opinion change |
-| Agreement | `test_analytics_agreement.py` | Pairwise metric, per-round scores |
-| Influence | `test_analytics_influence.py` | Distance-reduction, insufficient data |
-| Correlation | `test_correlation_engine.py` | Pearson correlation influence |
-| Sentiment | `test_sentiment_analytics_integration.py` | VADER integration |
-| Discussion | `test_opinion_evolution.py` | Opinion tracking across rounds |
-| Persistence | `test_persistence.py` | Save/load discussion records |
-| Personas | `test_personas.py`, `test_persona_grounding.py` | Persona loading & validation |
-| Reproducibility | `test_reproducible_run.py` | Discussion round-trip |
-| Week 3 reliability | `test_week3_reliability.py` | Orchestrator robustness |
 
 ---
 
 ## Design Decisions
 
-### Knowledge Layer (Week 1)
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Embedding model | `liquid/lfm-2.5-embedding-350m:free` (1,024 dims) | Free tier, reasonable quality |
-| Vector DB | PostgreSQL 16 + pgvector (IVFFlat) | Required by assignment, mature extension |
-| Chunking | 1,200 chars, 200-char overlap | Balances context vs. granularity |
-| Search | Dense cosine similarity, top-5 | Simple, effective baseline |
-
-### Agent Layer (Week 2)
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Personas | 6 YAML-defined analyst roles | Diverse perspectives on football topics |
-| LLM | OpenAI-compatible adapter | Works with OpenRouter, local models |
-| Sentiment | VADER (lexicon-based) | No API cost, instant scoring |
-| Tools | Knowledge search + calculator + web search | RAG integration + computation |
-
-### Discussion Layer (Week 3)
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Routing | NetworkX graph | Structured agent communication |
-| Persistence | JSON per discussion | Simple, portable, inspectable |
-| Opinion tracking | Per-agent snapshots with change flags | Enables Week 4 analytics |
-
-### Analytics Layer (Week 4)
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Stance scoring | 3-tier: rules → embeddings → LLM | Graceful degradation without API |
-| Agreement | `1 - D_mean/2` (pairwise) | Simple, interpretable [0, 1] range |
-| Influence | Distance-reduction + Pearson correlation | Two complementary perspectives |
-| Visualization | matplotlib (Agg backend) | No GUI needed, PNG output |
+| Subsystem | Decision | Technical Rationale |
+| :--- | :--- | :--- |
+| **Inference Engine** | Cerebras `qwen-3.8-27b` | Sub-2s generation latency per turn with complete function/tool calling support. |
+| **Worker Queue** | Deeper Semaphore Pool | Allows up to 4 queued deliberations without returning immediate `503` errors. |
+| **Pacing & Backoffs** | Bounded 10s Retry Clamp | Prevents rate-limit freezes from holding background workers for tens of minutes. |
+| **Graph Topology** | Ring with Cross-Chords | Guarantees strong connectivity for 2, 3, 4, 5, or 6 agents dynamically. |
+| **Live Streaming** | Incremental Ref Tracking | Eliminates full-page reload requirements by streaming new checkpointed turns directly into DOM. |
+| **Data Integrity** | Honest Null Stances | Deletes synthetic heuristic curves; unclassified stances remain honestly `null`. |
+| **Database Storage** | SQLite Automatic Fallback | Seamless offline operation when PostgreSQL/pgvector Docker services are stopped. |
 
 ---
 
-## Known Limitations
+## Historical Turn Latencies
 
-1. **Stance scoring without LLM** — The rules-based fallback produces `null` stances for complex opinion text. Use `--use-llm` or `--use-embeddings` for reliable numeric stances.
-2. **Influence ≠ causation** — Correlation-based influence measures association, not proof that one agent caused another's opinion change.
-3. **Fixed-size chunking** — Character-based splitting may cut mid-sentence. Semantic chunking would improve retrieval quality.
-4. **Free-tier LLM** — Response quality and rate limits depend on the provider's free tier.
-5. **No hybrid search** — Only dense vector retrieval is used; BM25 keyword search could help exact-match queries.
-6. **Static corpus** — Adding new sources requires editing `collect.py` and re-running the pipeline.
+Observed turn latencies recorded across benchmark debate sessions:
+
+- **Unthrottled Cerebras `qwen-3.8-27b`**: **~5s – 12s per turn** (a full 2-round debate completes in under 40 seconds).
+- **Normal API Window (Standard Load)**: **~25s – 50s per turn**.
+- **Throttled Window (Daily Quota Backoff)**: **~120s – 400s per turn** (handled automatically via exponential backoff ladders).
 
 ---
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|------------|
-| Language | Python 3.10+ |
-| Web Scraping | `requests` + `BeautifulSoup4` |
-| Embeddings | OpenRouter API (`liquid/lfm-2.5-embedding-350m:free`, 1,024 dims) |
-| LLM | OpenAI-compatible API (OpenRouter) |
-| Vector Database | PostgreSQL 16 + pgvector (IVFFlat cosine index) |
-| Agent Framework | Custom (persona + memory + tools + LLM) |
-| Graph Routing | NetworkX |
-| Sentiment | VADER (`vaderSentiment`) |
-| Analytics Models | Pydantic v2 |
-| Visualization | matplotlib |
-| Data Validation | Custom validators |
-| Testing | pytest |
-| Config | `python-dotenv` |
-| Containerization | Docker Compose |
+- **Backend**: FastAPI, Uvicorn, Python 3.10+, Pydantic v2
+- **Agent Architecture**: Custom Multi-Agent Framework, NetworkX Graph Routing
+- **AI / LLM**: OpenAI-compatible REST API (Cerebras `qwen-3.8-27b` / OpenRouter)
+- **Frontend**: React 18, Vite, Tailwind CSS, Phosphor Icons, Marked.js
+- **Database**: PostgreSQL 16 + pgvector (Semantic Embeddings), SQLite 3 (Fallback Platform DB)
+- **Analytics**: Sentence-Transformers (`all-MiniLM-L6-v2`), NumPy, SciPy, VADER
+- **Visualization**: Matplotlib (Agg headless engine), HTML5 Canvas Tactical Pitch
 
 ---
 
 ## Documentation Index
 
 | Document | Description |
-|----------|-------------|
-| [`docs/week4_analytics_guide.md`](docs/week4_analytics_guide.md) | Full analytics formulas, API reference, and Week 5 handoff |
-| [`docs/week4_tasks_1_2_3.md`](docs/week4_tasks_1_2_3.md) | Task implementation details |
-| [`docs/discussion_architecture.md`](docs/discussion_architecture.md) | Week 3 orchestrator design |
-| [`docs/graph_and_routing.md`](docs/graph_and_routing.md) | Message routing documentation |
-| [`docs/sentiment_and_analytics.md`](docs/sentiment_and_analytics.md) | Sentiment integration notes |
-| [`docs/evaluation.md`](docs/evaluation.md) | Week 1 retrieval evaluation methodology |
-| [`docs/mixed_work_integration.md`](docs/mixed_work_integration.md) | Branch integration notes |
-| [`docs/manual_testing.md`](docs/manual_testing.md) | Manual testing guide |
-| [`CHANGES.md`](CHANGES.md) | Full changelog |
-| [`week2.md`](week2.md) | Week 2 specification |
-| [`week3.md`](week3.md) | Week 3 specification |
-| [`week4.md`](week4.md) | Week 4 specification |
+| :--- | :--- |
+| [`frontend/README.md`](frontend/README.md) | Frontend architecture, component hierarchy, and build instructions. |
+| [`docs/week4_analytics_guide.md`](docs/week4_analytics_guide.md) | Mathematical formulas and algorithms for stance, agreement, and causal ablation. |
+| [`docs/discussion_architecture.md`](docs/discussion_architecture.md) | Multi-round debate orchestration mechanics. |
+| [`docs/graph_and_routing.md`](docs/graph_and_routing.md) | Communication graph theory and reciprocal edge definitions. |
+| [`docs/sentiment_and_analytics.md`](docs/sentiment_and_analytics.md) | VADER sentiment scoring integration. |
+| [`docs/evaluation.md`](docs/evaluation.md) | Information retrieval benchmark and precision/recall evaluation. |
