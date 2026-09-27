@@ -65,9 +65,11 @@ export default function IntelligenceView({ currentDiscussion, currentAnalytics }
           </div>
           <div className="my-2">
             <span className="font-headline text-[22px] font-bold text-primary block">
-              {currentAnalytics?.overall_trend || 'Converging'}
+              {currentAnalytics?.overall_trend && currentAnalytics.overall_trend !== 'Insufficient Data' ? currentAnalytics.overall_trend : '--'}
             </span>
-            <span className="font-mono text-[11px] text-primary/80">+35% alignment delta</span>
+            <span className="font-mono text-[11px] text-primary/80">
+              {currentAnalytics?.overall_trend ? 'Active consensus delta' : 'Awaiting Deliberation'}
+            </span>
           </div>
           <div className="w-full h-7 mt-1">
             <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 24">
@@ -84,7 +86,7 @@ export default function IntelligenceView({ currentDiscussion, currentAnalytics }
               Group Agreement
             </span>
             <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 font-mono text-[10px] text-primary">
-              High Align
+              {currentAnalytics?.mean_agreement != null ? (currentAnalytics.mean_agreement >= 0.7 ? 'High Align' : 'Moderate') : '--'}
             </span>
           </div>
           <div className="flex items-center gap-3 mt-2">
@@ -101,17 +103,23 @@ export default function IntelligenceView({ currentDiscussion, currentAnalytics }
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                   fill="none"
                   stroke="currentColor"
-                  strokeDasharray="74.2, 100"
+                  strokeDasharray={`${currentAnalytics?.mean_agreement != null ? Math.round(currentAnalytics.mean_agreement * 100) : 0}, 100`}
                   className="text-primary gauge-sweep"
                   strokeLinecap="round"
                   strokeWidth="3.5"
                 />
               </svg>
-              <span className="absolute font-mono text-[12px] font-bold text-white">74%</span>
+              <span className="absolute font-mono text-[12px] font-bold text-white">
+                {currentAnalytics?.mean_agreement != null ? `${Math.round(currentAnalytics.mean_agreement * 100)}%` : '--'}
+              </span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="font-headline text-[15px] font-semibold text-white">74.2%</span>
-              <span className="font-mono text-[11px] text-on-surface-variant truncate">Target: &gt;70%</span>
+              <span className="font-headline text-[15px] font-semibold text-white">
+                {currentAnalytics?.mean_agreement != null ? `${(currentAnalytics.mean_agreement * 100).toFixed(1)}%` : '--'}
+              </span>
+              <span className="font-mono text-[11px] text-on-surface-variant truncate">
+                {currentAnalytics?.mean_agreement != null ? 'Target: >70%' : 'Awaiting Deliberation'}
+              </span>
             </div>
           </div>
           <span className="font-mono text-[10px] text-secondary truncate mt-1">Convergence Index: Optimal</span>

@@ -133,7 +133,7 @@ export default function DeliberationView({
             <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-container-highest/80 border border-secondary/25 text-secondary">
               <span className="material-symbols-outlined text-[13px]">pie_chart</span>
               <span className="font-mono text-[10px] font-medium tracking-tight">
-                Consensus: {Math.round((currentAnalytics?.consensus_score || 0.68) * 100)}% Conv.
+                Consensus: {currentAnalytics?.consensus_score != null ? `${Math.round(currentAnalytics.consensus_score * 100)}% Conv.` : '--'}
               </span>
             </div>
           </div>

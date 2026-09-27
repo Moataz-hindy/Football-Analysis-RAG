@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { buildDebateColorMap, DISTINCT_PALETTE, AGENT_DISTINCT_COLORS } from '../constants/agents.js';
 
 /**
  * Agent Communication Graph on a Football Pitch.
@@ -15,21 +16,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 const PITCH_WIDTH = 581;
 const PITCH_HEIGHT = 380;
 
-// Default color palette matching Image #1
-const AGENT_COLORS = {
-  arg_coach: '#34d399',      // Mint/Emerald
-  arg_fan: '#38bdf8',        // Sky Blue / Cyan
-  arg_pundit: '#a78bfa',     // Lavender / Purple
-  france_coach: '#fb7185',   // Coral / Rose
-  france_fan: '#fbbf24',     // Amber / Gold
-  france_pundit: '#00f59b',  // Neon Green
-  tactical_analyst: '#10b981',
-  statistical_analyst: '#00d2ff',
-  fan_analyst: '#ec4899',
-  refereeing_analyst: '#f59e0b',
-  performance_analyst: '#f43f5e',
-  context_analyst: '#a78bfa',
-};
+const AGENT_COLORS = AGENT_DISTINCT_COLORS;
 
 // Fallback tactical pitch positions (x, y in SVG coordinates)
 const DEFAULT_POSITIONS_6 = {
@@ -66,7 +53,7 @@ export default function AgentCommunicationPitch({
   agents = [],
   messages = [],
   activeRound = 0,
-  consensus = 54,
+  consensus = '--',
   cursor = 0,
   playing = false,
   activePassEvent = null,
@@ -82,22 +69,25 @@ export default function AgentCommunicationPitch({
   // Normalize active agents list
   const activeAgentList = useMemo(() => {
     if (agents && agents.length > 0) {
+      const debateColors = buildDebateColorMap(agents);
       return agents.map((a, idx) => {
         const id = a.id || a.agent_id || `agent_${idx}`;
         const name = a.name || id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-        const color = a.color || AGENT_COLORS[id] || (idx % 2 === 0 ? '#00f59b' : '#00d2ff');
+        const camp = a.camp || a.raw?.camp || '';
+        const isCampB = /b|counter|france|defensive|antithesis|away|opponent/i.test(camp);
+        const color = debateColors[id] || debateColors[String(id).toLowerCase()] || a.color || DISTINCT_PALETTE[idx % DISTINCT_PALETTE.length];
         const initial = (name.replace(/^(arg|france)\s+/i, '').trim()[0] || name[0] || 'A').toUpperCase();
-        return { id, name, color, initial, raw: a };
+        return { id, name, color, initial, camp, isCampB, raw: a };
       });
     }
-    // Fallback default agents matching Image #1
+    // Fallback default agents matching design system
     return [
-      { id: 'arg_coach', name: 'Arg Coach', color: '#34d399', initial: 'A' },
-      { id: 'arg_fan', name: 'Arg Fan', color: '#38bdf8', initial: 'A' },
-      { id: 'arg_pundit', name: 'Arg Pundit', color: '#a78bfa', initial: 'A' },
-      { id: 'france_coach', name: 'France Coach', color: '#fb7185', initial: 'F' },
-      { id: 'france_fan', name: 'France Fan', color: '#fbbf24', initial: 'F' },
-      { id: 'france_pundit', name: 'France Pundit', color: '#00f59b', initial: 'F' },
+      { id: 'arg_coach', name: 'Arg Coach', color: '#00f59b', initial: 'A', camp: 'Camp A', isCampB: false },
+      { id: 'arg_fan', name: 'Arg Fan', color: '#00d2ff', initial: 'A', camp: 'Camp A', isCampB: false },
+      { id: 'arg_pundit', name: 'Arg Pundit', color: '#38bdf8', initial: 'A', camp: 'Camp A', isCampB: false },
+      { id: 'france_coach', name: 'France Coach', color: '#f43f5e', initial: 'F', camp: 'Camp B', isCampB: true },
+      { id: 'france_fan', name: 'France Fan', color: '#fbbf24', initial: 'F', camp: 'Camp B', isCampB: true },
+      { id: 'france_pundit', name: 'France Pundit', color: '#a855f7', initial: 'F', camp: 'Camp B', isCampB: true },
     ];
   }, [agents]);
 
@@ -105,6 +95,46 @@ export default function AgentCommunicationPitch({
   const nodePositions = useMemo(() => {
     const map = {};
     const count = activeAgentList.length;
+
+    // Check if agents have explicit camp assignment
+    const hasExplicitCamps = activeAgentList.some((a) => a.camp);
+
+    if (hasExplicitCamps) {
+      const campA = activeAgentList.filter((a) => !a.isCampB);
+      const campB = activeAgentList.filter((a) => a.isCampB);
+
+      const assignCampPositions = (list, isRightSide) => {
+        const xBase = isRightSide ? 440 : 140;
+        const total = list.length;
+        list.forEach((a, subIdx) => {
+          let y, xOffset;
+          if (total === 1) {
+            y = 190;
+            xOffset = 0;
+          } else if (total === 2) {
+            y = subIdx === 0 ? 130 : 270;
+            xOffset = isRightSide ? 20 : -20;
+          } else if (total === 3) {
+            y = subIdx === 0 ? 110 : (subIdx === 1 ? 190 : 280);
+            xOffset = subIdx === 1 ? (isRightSide ? -50 : 50) : (isRightSide ? 30 : -30);
+          } else {
+            const yStep = 240 / Math.max(1, total - 1);
+            y = 80 + subIdx * yStep;
+            xOffset = (subIdx % 2 === 0 ? -30 : 30);
+          }
+          map[a.id] = {
+            x: Math.max(60, Math.min(PITCH_WIDTH - 60, xBase + xOffset)),
+            y: Math.max(70, Math.min(PITCH_HEIGHT - 60, y)),
+            role: a.raw?.role || (isRightSide ? 'Counter' : 'Thesis'),
+            ...a,
+          };
+        });
+      };
+
+      assignCampPositions(campA, false);
+      assignCampPositions(campB, true);
+      return map;
+    }
 
     activeAgentList.forEach((a, idx) => {
       // 1. Direct static preset if available
@@ -325,7 +355,7 @@ export default function AgentCommunicationPitch({
           {/* Consensus Pill */}
           <div className="flex items-center px-3 py-0.5 rounded-full bg-[#00f59b]/10 border border-[#00f59b]/40">
             <span className="font-mono text-[11px] font-bold text-[#00f59b]">
-              Consensus: {consensus}%
+              Consensus: {typeof consensus === 'number' && !isNaN(consensus) ? `${consensus}%` : '--'}
             </span>
           </div>
         </div>

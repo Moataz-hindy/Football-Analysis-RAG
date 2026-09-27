@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import LandingPage from './components/LandingPage';
 import MarkdownPreview from './components/MarkdownPreview';
 import AgentCommunicationPitch from './components/AgentCommunicationPitch';
@@ -16,57 +16,206 @@ const AGENT_ROSTER = [
   'fan_analyst',
 ];
 
-// Specialist agent registry
+// Specialist agent registry with distinct, high-contrast, obsidian-neon colors
+export const AGENT_DISTINCT_COLORS = {
+  tactical_analyst: '#00f59b',    // Neon Emerald Green
+  performance_analyst: '#f43f5e', // Coral Crimson Rose
+  statistical_analyst: '#00d2ff', // Electric Cyan Blue
+  fan_analyst: '#fbbf24',         // Golden Amber Yellow
+  refereeing_analyst: '#a855f7',  // Vivid Neon Purple
+  context_analyst: '#fb923c',     // Warm Tangerine Orange
+  arg_coach: '#00f59b',
+  arg_fan: '#00d2ff',
+  arg_pundit: '#38bdf8',
+  france_coach: '#f43f5e',
+  france_fan: '#fbbf24',
+  france_pundit: '#a855f7',
+};
+
+export const DISTINCT_PALETTE = [
+  '#00f59b', // 0: Neon Emerald Green (Tactical Analyst)
+  '#00d2ff', // 1: Electric Cyan Blue (Statistical Analyst)
+  '#f43f5e', // 2: Coral Crimson Rose (Performance Analyst)
+  '#fbbf24', // 3: Golden Amber Yellow (Fan Sentiment)
+  '#a855f7', // 4: Vivid Neon Purple (Refereeing Analyst)
+  '#fb923c', // 5: Warm Tangerine Orange (Historical Context)
+  '#38bdf8', // 6: Sky Cyan
+  '#ec4899', // 7: Hot Magenta Pink
+  '#34d399', // 8: Mint Green
+  '#818cf8', // 9: Indigo Blue
+  '#f97316', // 10: Bright Orange
+  '#06b6d4', // 11: Deep Cyan
+  '#e11d48', // 12: Ruby Rose
+  '#10b981', // 13: Emerald
+  '#8b5cf6', // 14: Violet
+  '#f59e0b', // 15: Amber Gold
+];
+
+export const CUSTOM_PERSONAS_CACHE = {};
+
+export function buildDebateColorMap(allAgents = []) {
+  const colorMap = {};
+  const usedColors = new Set();
+
+  if (!Array.isArray(allAgents) || allAgents.length === 0) {
+    return colorMap;
+  }
+
+  // Pass 1: Give signature colors to known standard agents
+  allAgents.forEach((a) => {
+    const id = typeof a === 'string' ? a : (a?.agent_id || a?.id || '');
+    const cleanId = String(id).toLowerCase();
+    if (AGENT_DISTINCT_COLORS[cleanId]) {
+      const sigColor = AGENT_DISTINCT_COLORS[cleanId];
+      colorMap[id] = sigColor;
+      colorMap[cleanId] = sigColor;
+      usedColors.add(sigColor.toLowerCase());
+    }
+  });
+
+  // Pass 2: Custom personas with an explicit distinct color that is not yet taken
+  allAgents.forEach((a) => {
+    const id = typeof a === 'string' ? a : (a?.agent_id || a?.id || '');
+    const cleanId = String(id).toLowerCase();
+    if (colorMap[id] || colorMap[cleanId]) return;
+
+    const cached = CUSTOM_PERSONAS_CACHE[id] || CUSTOM_PERSONAS_CACHE[cleanId];
+    const candidate = (typeof a === 'object' && a?.color) || cached?.color;
+    if (candidate && candidate.startsWith('#')) {
+      const candLower = candidate.toLowerCase();
+      if (!usedColors.has(candLower) && candLower !== '#00f59b' && candLower !== '#a78bfa' && candLower !== '#c084fc' && candLower !== '#818cf8') {
+        colorMap[id] = candidate;
+        colorMap[cleanId] = candidate;
+        usedColors.add(candLower);
+      }
+    }
+  });
+
+  // Pass 3: For any remaining agents (custom personas or dynamic agents), allocate next unused color from DISTINCT_PALETTE
+  let paletteIdx = 0;
+  allAgents.forEach((a) => {
+    const id = typeof a === 'string' ? a : (a?.agent_id || a?.id || '');
+    const cleanId = String(id).toLowerCase();
+    if (colorMap[id] || colorMap[cleanId]) return;
+
+    while (paletteIdx < DISTINCT_PALETTE.length && usedColors.has(DISTINCT_PALETTE[paletteIdx].toLowerCase())) {
+      paletteIdx++;
+    }
+    const color = paletteIdx < DISTINCT_PALETTE.length
+      ? DISTINCT_PALETTE[paletteIdx]
+      : DISTINCT_PALETTE[paletteIdx % DISTINCT_PALETTE.length];
+
+    colorMap[id] = color;
+    colorMap[cleanId] = color;
+    usedColors.add(color.toLowerCase());
+    paletteIdx++;
+  });
+
+  return colorMap;
+}
+
+export function getDistinctAgentColor(id, index = null, fallback = null) {
+  const cleanId = String(id || '').toLowerCase();
+
+  // 1. Signature distinct color for known analyst roles
+  if (cleanId && AGENT_DISTINCT_COLORS[cleanId]) {
+    return AGENT_DISTINCT_COLORS[cleanId];
+  }
+
+  // 2. Explicit custom color (if not legacy monochrome camp green/purple)
+  if (fallback && fallback.startsWith('#') && fallback !== '#00f59b' && fallback !== '#a78bfa' && fallback !== '#c084fc' && fallback !== '#818cf8') {
+    return fallback;
+  }
+
+  // 3. Sequential index mapping ensures every agent in a match gets a different color
+  if (typeof index === 'number' && index >= 0) {
+    return DISTINCT_PALETTE[index % DISTINCT_PALETTE.length];
+  }
+
+  // 4. Fallback deterministic hash (offset by 6 for custom personas to avoid colliding with default 6)
+  let hash = 0;
+  for (let i = 0; i < cleanId.length; i++) {
+    hash = (hash << 5) - hash + cleanId.charCodeAt(i);
+    hash |= 0;
+  }
+  const offset = 6 + (Math.abs(hash) % (DISTINCT_PALETTE.length - 6));
+  return DISTINCT_PALETTE[offset];
+}
+
 const AGENTS = {
   tactical_analyst: {
     id: 'tactical_analyst',
     name: 'Tactical Analyst',
     focus: 'Half-space & Spatial',
     icon: 'ph ph-strategy',
-    color: 'var(--color-accent)',
+    color: '#00f59b',
   },
   statistical_analyst: {
     id: 'statistical_analyst',
     name: 'Statistical Analyst',
     focus: 'xG & PPDA',
     icon: 'ph ph-chart-line-up',
-    color: 'var(--color-accent-300)',
-  },
-  fan_analyst: {
-    id: 'fan_analyst',
-    name: 'Fan Sentiment',
-    focus: 'Momentum & Psychological Surge',
-    icon: 'ph ph-users-three',
-    color: 'var(--color-neutral-300)',
-  },
-  refereeing_analyst: {
-    id: 'refereeing_analyst',
-    name: 'Refereeing Analyst',
-    focus: 'Law 12 & VAR',
-    icon: 'ph ph-flag',
-    color: 'var(--color-neutral-400)',
+    color: '#00d2ff',
   },
   performance_analyst: {
     id: 'performance_analyst',
     name: 'Performance Analyst',
     focus: 'Fatigue & Sprints',
     icon: 'ph ph-heartbeat',
-    color: 'var(--color-accent-700)',
+    color: '#f43f5e',
+  },
+  fan_analyst: {
+    id: 'fan_analyst',
+    name: 'Fan Sentiment',
+    focus: 'Momentum & Psychological Surge',
+    icon: 'ph ph-users-three',
+    color: '#fbbf24',
+  },
+  refereeing_analyst: {
+    id: 'refereeing_analyst',
+    name: 'Refereeing Analyst',
+    focus: 'Law 12 & VAR',
+    icon: 'ph ph-flag',
+    color: '#a855f7',
   },
   context_analyst: {
     id: 'context_analyst',
     name: 'Historical Context',
     focus: 'Precedents',
     icon: 'ph ph-books',
-    color: 'var(--color-neutral-500)',
+    color: '#fb923c',
   },
 };
 
 // Agents that take part in a run started with the selected count.
 function rosterAgents(numAgents) {
-  return AGENT_ROSTER.slice(0, numAgents)
-    .map((id) => ({ ...AGENTS[id], agent_id: id }))
+  const ids = AGENT_ROSTER.slice(0, numAgents);
+  const colorMap = buildDebateColorMap(ids);
+  return ids
+    .map((id) => ({
+      ...AGENTS[id],
+      agent_id: id,
+      color: colorMap[id] || AGENTS[id]?.color || '#00f59b',
+    }))
     .filter((agent) => agent.id);
+}
+
+export function registerCustomPersona(persona) {
+  if (persona && persona.id) {
+    const id = persona.id;
+    const cleanId = String(id).toLowerCase();
+    if (!persona.color || persona.color === '#00f59b' || persona.color === '#a78bfa' || persona.color === '#c084fc' || persona.color === '#818cf8') {
+      let hash = 0;
+      for (let i = 0; i < cleanId.length; i++) {
+        hash = (hash << 5) - hash + cleanId.charCodeAt(i);
+        hash |= 0;
+      }
+      const colorIdx = 6 + (Math.abs(hash) % (DISTINCT_PALETTE.length - 6));
+      persona.color = DISTINCT_PALETTE[colorIdx];
+    }
+    CUSTOM_PERSONAS_CACHE[id] = persona;
+    CUSTOM_PERSONAS_CACHE[cleanId] = persona;
+  }
 }
 
 function getAgentInfo(id, meta = null, allAgents = []) {
@@ -76,24 +225,73 @@ function getAgentInfo(id, meta = null, allAgents = []) {
       name: 'Specialist Voice',
       focus: 'Tactical Analyst',
       icon: 'ph ph-user',
-      color: 'var(--color-accent-300)',
+      color: '#00f59b',
       camp: '',
     };
   }
 
-  // 1. Direct static lookup
-  if (AGENTS[id]) {
-    return { ...AGENTS[id], camp: '' };
+  // If agent metadata is already in allAgents list
+  if (!meta && Array.isArray(allAgents)) {
+    meta = allAgents.find((a) => (a.agent_id || a.id || a) === id);
   }
 
   const cleanId = String(id).toLowerCase();
+  const staticAgent = AGENTS[id];
+  const cachedCustom = CUSTOM_PERSONAS_CACHE[id] || CUSTOM_PERSONAS_CACHE[cleanId];
 
-  // If agent metadata is already in allAgents list
-  if (!meta && Array.isArray(allAgents)) {
-    meta = allAgents.find((a) => (a.agent_id || a.id) === id);
+  // Identify Camp and Team Name
+  let campName = meta?.camp || '';
+  let teamName = '';
+
+  const idParts = id.split('_');
+  if (idParts.length > 1) {
+    const rawTeam = idParts.slice(0, -1).join(' ');
+    teamName = rawTeam.replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  // 2. Identify Role: Coach, Fan, Pundit
+  // Determine Agent's Unique Distinct Color via collision-free debate map
+  let assignedColor = null;
+  const effectiveAgents = Array.isArray(allAgents) && allAgents.length > 0
+    ? allAgents
+    : (Array.isArray(meta?.allAgents) && meta.allAgents.length > 0 ? meta.allAgents : null);
+
+  if (effectiveAgents) {
+    const debateColors = buildDebateColorMap(effectiveAgents);
+    assignedColor = debateColors[id] || debateColors[cleanId];
+  }
+
+  if (!assignedColor) {
+    let agentIndex = -1;
+    if (effectiveAgents) {
+      agentIndex = effectiveAgents.findIndex((a) => (a.agent_id || a.id || a) === id);
+    }
+    if (agentIndex < 0) agentIndex = AGENT_ROSTER.indexOf(cleanId);
+    assignedColor = getDistinctAgentColor(id, agentIndex >= 0 ? agentIndex : null, meta?.color || cachedCustom?.color);
+  }
+
+  // 1. Direct static lookup with consistent distinct color
+  if (staticAgent) {
+    return {
+      ...staticAgent,
+      camp: campName,
+      color: assignedColor,
+      focus: campName ? `${campName} • ${staticAgent.focus}` : staticAgent.focus,
+    };
+  }
+
+  // 2. Cached custom / AI persona with consistent distinct color
+  if (cachedCustom) {
+    return {
+      id,
+      name: cachedCustom.name || id,
+      focus: campName ? `${campName} • ${cachedCustom.field || 'Specialist Analyst'}` : (cachedCustom.field || 'Specialist Analyst'),
+      icon: cachedCustom.icon || 'ph ph-sparkle',
+      color: assignedColor,
+      camp: campName,
+    };
+  }
+
+  // 3. Dynamic / LLM generated persona
   const isCoach = cleanId.includes('coach') || cleanId.includes('manager') || cleanId.includes('gaffer');
   const isFan = cleanId.includes('fan') || cleanId.includes('supporter') || cleanId.includes('terrace');
   const isPundit = cleanId.includes('pundit') || cleanId.includes('player') || cleanId.includes('expert') || cleanId.includes('legend');
@@ -126,43 +324,6 @@ function getAgentInfo(id, meta = null, allAgents = []) {
     icon = 'ph ph-books';
   }
 
-  // 3. Identify Camp and Team Name
-  let campName = meta?.camp || '';
-  let teamName = '';
-
-  const idParts = id.split('_');
-  if (idParts.length > 1) {
-    const rawTeam = idParts.slice(0, -1).join(' ');
-    teamName = rawTeam.replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-
-  // Determine Camp A vs Camp B
-  let isCampB = false;
-  if (campName) {
-    isCampB = /b|counter|france|defensive|antithesis|away|opponent/i.test(campName);
-  } else if (Array.isArray(allAgents) && allAgents.length >= 4) {
-    const idx = allAgents.findIndex((a) => (a.agent_id || a.id) === id);
-    if (idx >= Math.floor(allAgents.length / 2)) {
-      isCampB = true;
-    }
-  } else if (cleanId.startsWith('france') || cleanId.includes('camp_b') || cleanId.includes('side_b')) {
-    isCampB = true;
-  }
-
-  // Dynamic Theme Colors:
-  // Camp A: Emerald/Teal palette
-  // Camp B: Violet/Amber/Rose palette
-  let color = 'var(--color-accent)';
-  if (isCampB) {
-    if (isCoach) color = '#a78bfa'; // violet
-    else if (isFan) color = '#fbbf24'; // amber
-    else color = '#f43f5e'; // rose
-  } else {
-    if (isCoach) color = '#10b981'; // emerald
-    else if (isFan) color = '#38bdf8'; // sky/cyan
-    else color = '#34d399'; // mint
-  }
-
   const displayName = meta?.name || (
     teamName ? `${teamName} ${roleLabel}` : id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   );
@@ -176,7 +337,7 @@ function getAgentInfo(id, meta = null, allAgents = []) {
     name: displayName,
     focus: displayFocus,
     icon,
-    color,
+    color: assignedColor,
     camp: campName || teamName,
   };
 }
@@ -309,6 +470,16 @@ export default function App() {
   };
 
   const [query, setQuery] = useState('');
+  const queryInputRef = useRef(null);
+
+  // Auto-resize discussion topic text box to dynamically adapt to text length
+  useEffect(() => {
+    if (queryInputRef.current) {
+      queryInputRef.current.style.height = 'auto';
+      const scrollH = queryInputRef.current.scrollHeight;
+      queryInputRef.current.style.height = `${Math.max(48, Math.min(scrollH, 300))}px`;
+    }
+  }, [query]);
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [searchHistory, setSearchHistory] = useState('');
@@ -322,6 +493,123 @@ export default function App() {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [personaManagerModalOpen, setPersonaManagerModalOpen] = useState(false);
   const [selectedAgentCount, setSelectedAgentCount] = useState(6);
+  const [personaMode, setPersonaMode] = useState('custom'); // 'dynamic' | 'custom'
+  const [campAPersonaIds, setCampAPersonaIds] = useState([
+    'tactical_analyst',
+    'statistical_analyst',
+    'fan_analyst',
+  ]);
+  const [campBPersonaIds, setCampBPersonaIds] = useState([
+    'refereeing_analyst',
+    'performance_analyst',
+    'context_analyst',
+  ]);
+  const selectedPersonaIds = useMemo(
+    () => [...campAPersonaIds, ...campBPersonaIds],
+    [campAPersonaIds, campBPersonaIds]
+  );
+
+  const [customPersonasVersion, setCustomPersonasVersion] = useState(0);
+
+  const registerCustomPersonas = (list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach(registerCustomPersona);
+    setCustomPersonasVersion((v) => v + 1);
+  };
+
+  const handleAssignPersonaToCamp = (persona, camp) => {
+    if (persona && persona.id) {
+      registerCustomPersona(persona);
+      setCustomPersonasVersion((v) => v + 1);
+    }
+    const pid = persona.id;
+    setPersonaMode('custom');
+    if (campAPersonaIds.includes(pid) || campBPersonaIds.includes(pid)) return;
+    if (selectedPersonaIds.length >= 6) {
+      alert('Maximum 6 personas can be selected for a deliberation.');
+      return;
+    }
+    if (camp === 'B') {
+      setCampBPersonaIds((prev) => [...prev, pid]);
+    } else {
+      setCampAPersonaIds((prev) => [...prev, pid]);
+    }
+  };
+
+  const handleMovePersonaCamp = (persona, targetCamp) => {
+    const pid = persona.id;
+    if (targetCamp === 'B') {
+      if (campAPersonaIds.length <= 1) {
+        alert('Camp A must retain at least 1 agent.');
+        return;
+      }
+      setCampAPersonaIds((prev) => prev.filter((id) => id !== pid));
+      setCampBPersonaIds((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
+    } else {
+      if (campBPersonaIds.length <= 1) {
+        alert('Camp B must retain at least 1 agent.');
+        return;
+      }
+      setCampBPersonaIds((prev) => prev.filter((id) => id !== pid));
+      setCampAPersonaIds((prev) => (prev.includes(pid) ? prev : [...prev, pid]));
+    }
+  };
+
+  const handleRemovePersonaFromArena = (persona) => {
+    const pid = persona.id;
+    if (selectedPersonaIds.length <= 2) {
+      alert('A deliberation requires at least 2 active personas in total.');
+      return;
+    }
+    if (campAPersonaIds.includes(pid)) {
+      if (campAPersonaIds.length <= 1) {
+        alert('Camp A must retain at least 1 agent.');
+        return;
+      }
+      setCampAPersonaIds((prev) => prev.filter((id) => id !== pid));
+    } else if (campBPersonaIds.includes(pid)) {
+      if (campBPersonaIds.length <= 1) {
+        alert('Camp B must retain at least 1 agent.');
+        return;
+      }
+      setCampBPersonaIds((prev) => prev.filter((id) => id !== pid));
+    }
+  };
+
+  const handleTogglePersonaForArena = (persona) => {
+    if (persona && persona.id) {
+      registerCustomPersona(persona);
+      setCustomPersonasVersion((v) => v + 1);
+    }
+    const pid = persona.id;
+    setPersonaMode('custom');
+    if (campAPersonaIds.includes(pid) || campBPersonaIds.includes(pid)) {
+      handleRemovePersonaFromArena(persona);
+    } else {
+      if (campAPersonaIds.length <= campBPersonaIds.length) {
+        handleAssignPersonaToCamp(persona, 'A');
+      } else {
+        handleAssignPersonaToCamp(persona, 'B');
+      }
+    }
+  };
+
+  // Pre-load custom personas so their human names appear on arena roster chips
+  useEffect(() => {
+    const activeTok = token || localStorage.getItem('touchline_token');
+    if (!activeTok) return;
+    fetch('/profile/personas', {
+      headers: { Authorization: `Bearer ${activeTok}` },
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          data.forEach(registerCustomPersona);
+          setCustomPersonasVersion((v) => v + 1);
+        }
+      })
+      .catch(() => {});
+  }, [token]);
 
   // Redirect to landing page whenever not authenticated (and normalise the URL)
   useEffect(() => {
@@ -786,14 +1074,26 @@ export default function App() {
     setCurrentDiscussionId(null);
     setCurrentDiscussionStatus('running');
     setCurrentAnalytics(null);
-    setProgressStatus('Initializing 6 specialist analyst personas and querying RAG embeddings...');
+    setProgressStatus(
+      personaMode === 'dynamic'
+        ? `Generating dynamic ${selectedAgentCount} polarized personas via LLM and initializing RAG retrieval...`
+        : `Initializing ${selectedPersonaIds.length} specialist personas and querying RAG embeddings...`
+    );
     navigateTo('arena');
 
     try {
       const res = await fetch('/discussions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: prompt, num_rounds: selectedRounds, num_agents: selectedAgentCount, dynamic_personas: false }),
+        body: JSON.stringify({
+          topic: prompt,
+          num_rounds: selectedRounds,
+          num_agents: personaMode === 'dynamic' ? selectedAgentCount : selectedPersonaIds.length,
+          dynamic_personas: personaMode === 'dynamic',
+          persona_ids: personaMode === 'custom' ? selectedPersonaIds : null,
+          camp_a_ids: personaMode === 'custom' ? campAPersonaIds : null,
+          camp_b_ids: personaMode === 'custom' ? campBPersonaIds : null,
+        }),
         signal: AbortSignal.timeout(30000),
       });
 
@@ -825,7 +1125,18 @@ export default function App() {
         topic: prompt,
         messages: [],
         num_rounds: selectedRounds,
-        agents: rosterAgents(selectedAgentCount),
+        agents: personaMode === 'custom'
+          ? [
+              ...campAPersonaIds.map((id) => {
+                const info = getAgentInfo(id, { camp: 'Camp A' }, selectedPersonaIds);
+                return { agent_id: id, name: info.name, role: info.focus, focus: info.focus, camp: 'Camp A', color: info.color };
+              }),
+              ...campBPersonaIds.map((id) => {
+                const info = getAgentInfo(id, { camp: 'Camp B' }, selectedPersonaIds);
+                return { agent_id: id, name: info.name, role: info.focus, focus: info.focus, camp: 'Camp B', color: info.color };
+              }),
+            ]
+          : rosterAgents(selectedAgentCount),
       });
 
       // Begin polling the background discussion worker
@@ -937,6 +1248,11 @@ export default function App() {
   // Dynamic Tactical Alignment per Round (derives from LLM agreement, trajectories, sentiments, or live message text)
   const getRoundAlignment = React.useCallback(
     (roundNum) => {
+      // While generating a debate or when none is selected or no messages yet, consensus is '--'
+      if (isStarting || currentDiscussionStatus === 'running' || !currentDiscussion || rawMsgs.length === 0) {
+        return null;
+      }
+
       // 1. Backend calculated round agreement score
       const match = currentAnalytics?.agreement?.find((r) => r.round_num === roundNum);
       if (match?.agreement_score != null) {
@@ -1005,36 +1321,64 @@ export default function App() {
         return Math.round(Math.max(0.2, Math.min(0.92, 1.0 - (meanDist / 2.0))) * 100);
       }
 
-      return rawMsgs.length > 0 ? 55 : 0;
+      return null;
     },
-    [currentAnalytics, rawMsgs]
+    [isStarting, currentDiscussionStatus, currentDiscussion, currentAnalytics, rawMsgs]
   );
 
   // Dynamic round tactical alignment (per round in Arena & Intelligence):
   const roundAlignment = getRoundAlignment(activeRound);
 
   // Dynamic consensus (overall discussion average across rounds):
-  const consensus = currentAnalytics?.mean_agreement != null
-    ? Math.round(currentAnalytics.mean_agreement * 100)
-    : (currentAnalytics?.consensus_score
-      ? Math.round(currentAnalytics.consensus_score * 100)
-      : (() => {
-          const roundScores = availableRounds
-            .filter((r) => r > 0)
-            .map((r) => getRoundAlignment(r))
-            .filter((s) => s > 0);
-          return roundScores.length > 0
-            ? Math.round(roundScores.reduce((a, b) => a + b, 0) / roundScores.length)
-            : 0;
-        })());
+  const consensus = React.useMemo(() => {
+    if (isStarting || currentDiscussionStatus === 'running' || !currentDiscussion || rawMsgs.length === 0) {
+      return null;
+    }
+    if (currentAnalytics?.mean_agreement != null) {
+      return Math.round(currentAnalytics.mean_agreement * 100);
+    }
+    if (currentAnalytics?.consensus_score != null) {
+      return Math.round(currentAnalytics.consensus_score * 100);
+    }
+    const roundScores = availableRounds
+      .filter((r) => r > 0)
+      .map((r) => getRoundAlignment(r))
+      .filter((s) => s != null && s > 0);
+    return roundScores.length > 0
+      ? Math.round(roundScores.reduce((a, b) => a + b, 0) / roundScores.length)
+      : null;
+  }, [isStarting, currentDiscussionStatus, currentDiscussion, rawMsgs, currentAnalytics, availableRounds, getRoundAlignment]);
 
   const nextAgentId = cursor < rawMsgs.length ? rawMsgs[cursor]?.sender_id : null;
   const lastAgentId = cursor > 0 ? rawMsgs[cursor - 1]?.sender_id : null;
   const spokenSet = new Set(rawMsgs.slice(0, cursor).map((m) => m.sender_id));
 
+  // Unified, authoritative debate roster for color and agent info resolution.
+  // Resilient against initial stale roster states while dynamic personas are generating.
+  const debateAgentRoster = React.useMemo(() => {
+    if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
+      const sampleId = currentDiscussion.agents[0]?.agent_id || currentDiscussion.agents[0]?.id;
+      if (currentAnalytics?.opinion_trajectories && sampleId && !currentAnalytics.opinion_trajectories[sampleId]) {
+        return Object.keys(currentAnalytics.opinion_trajectories);
+      }
+      return currentDiscussion.agents;
+    }
+    if (currentAnalytics?.opinion_trajectories && Object.keys(currentAnalytics.opinion_trajectories).length > 0) {
+      return Object.keys(currentAnalytics.opinion_trajectories);
+    }
+    if (currentAnalytics?.influence && currentAnalytics.influence.length > 0) {
+      return currentAnalytics.influence.map((inf) => inf.agent_id);
+    }
+    return null;
+  }, [currentDiscussion, currentAnalytics]);
+
   // Dynamic Active Agent List
-  const activeAgents = (currentDiscussion?.agents && currentDiscussion.agents.length > 0)
-    ? currentDiscussion.agents.map((ag) => getAgentInfo(ag.agent_id, ag, currentDiscussion.agents))
+  const activeAgents = (debateAgentRoster && debateAgentRoster.length > 0)
+    ? debateAgentRoster.map((ag) => {
+        const aid = typeof ag === 'string' ? ag : (ag?.agent_id || ag?.id);
+        const meta = typeof ag === 'object' ? ag : null;
+        return getAgentInfo(aid, meta, debateAgentRoster);
+      })
     : Object.values(AGENTS);
 
   // Trajectories Data (Real analytics only; no fabricated camp-decay series).
@@ -1438,37 +1782,435 @@ export default function App() {
                 gap: '14px',
               }}
             >
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Persona Deliberation Mode Switch */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'inline-flex', padding: '3px', borderRadius: 'var(--radius-md)', background: 'color-mix(in srgb, var(--color-bg) 75%, transparent)', border: '1px solid var(--color-divider)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPersonaMode('dynamic')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 'calc(var(--radius-md) - 2px)',
+                      border: 0,
+                      background: personaMode === 'dynamic' ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.3) 0%, rgba(139, 92, 246, 0.4) 100%)' : 'transparent',
+                      color: personaMode === 'dynamic' ? '#c084fc' : 'var(--color-neutral-400)',
+                      font: '600 12.5px var(--font-body)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: personaMode === 'dynamic' ? '0 0 14px rgba(168, 85, 247, 0.35)' : 'none',
+                      transition: 'all 0.18s ease',
+                    }}
+                  >
+                    <i className="ph ph-sparkle" style={{ fontSize: '15px' }}></i>
+                    Dynamic ({selectedAgentCount} Agents, AI-Polarized)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPersonaMode('custom')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 'calc(var(--radius-md) - 2px)',
+                      border: 0,
+                      background: personaMode === 'custom' ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)' : 'transparent',
+                      color: personaMode === 'custom' ? 'var(--color-accent-100)' : 'var(--color-neutral-400)',
+                      font: '600 12.5px var(--font-body)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: personaMode === 'custom' ? '0 0 14px color-mix(in srgb, var(--color-accent) 30%, transparent)' : 'none',
+                      transition: 'all 0.18s ease',
+                    }}
+                  >
+                    <i className="ph ph-users-three" style={{ fontSize: '15px' }}></i>
+                    Curated Roster ({selectedPersonaIds.length}/6 Personas)
+                  </button>
+                </div>
+
+                {personaMode === 'custom' ? (
+                  <button
+                    type="button"
+                    onClick={() => setPersonaManagerModalOpen(true)}
+                    className="btn btn-ghost"
+                    style={{
+                      fontSize: '12px',
+                      padding: '5px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--color-divider)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      color: 'var(--color-accent)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <i className="ph ph-sliders-horizontal" style={{ fontSize: '14px' }}></i>
+                    Manage Specialist Roster (Min 2, Max 6)
+                  </button>
+                ) : (
+                  <span style={{ fontSize: '12px', color: '#c084fc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <i className="ph ph-sparkle" style={{ fontSize: '14px' }}></i>
+                    Generates {selectedAgentCount} match-specific personas dynamically across opposing camps
+                  </span>
+                )}
+              </div>
+
+              {/* Curated Dual-Camp Assignment Dashboard (Mode 2) */}
+              {personaMode === 'custom' && (
                 <div
                   style={{
-                    flex: '1 1 320px',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                    gap: '12px',
+                    padding: '8px 0 12px 0',
+                    alignItems: 'stretch',
+                  }}
+                >
+                  {/* CAMP A CONTAINER */}
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(0, 245, 155, 0.06) 0%, rgba(6, 10, 18, 0.85) 100%)',
+                      border: '1px solid rgba(0, 245, 155, 0.3)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      boxShadow: '0 4px 20px rgba(0, 245, 155, 0.08)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: '#00f59b',
+                            boxShadow: '0 0 10px #00f59b',
+                          }}
+                        />
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#00f59b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                          Camp A • Thesis / Left Pitch
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '10.5px',
+                            fontFamily: 'monospace',
+                            padding: '1px 7px',
+                            borderRadius: '999px',
+                            background: 'rgba(0, 245, 155, 0.15)',
+                            color: '#00f59b',
+                            border: '1px solid rgba(0, 245, 155, 0.3)',
+                          }}
+                        >
+                          {campAPersonaIds.length} {campAPersonaIds.length === 1 ? 'agent' : 'agents'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPersonaManagerModalOpen(true)}
+                        style={{
+                          background: 'transparent',
+                          border: '1px dashed rgba(0, 245, 155, 0.5)',
+                          color: '#00f59b',
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title="Add specialist persona to Camp A"
+                      >
+                        <i className="ph ph-plus" style={{ fontSize: '11px' }}></i>
+                        Add
+                      </button>
+                    </div>
+
+                    {/* Agent Chips in Camp A */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {campAPersonaIds.map((pid) => {
+                        const info = getAgentInfo(pid, { camp: 'Camp A' }, selectedPersonaIds);
+                        return (
+                          <div
+                            key={pid}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              background: 'rgba(0, 245, 155, 0.08)',
+                              border: '1px solid rgba(0, 245, 155, 0.25)',
+                              fontSize: '11.5px',
+                              color: '#f1f5f9',
+                            }}
+                          >
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: info.color }}></span>
+                            <span style={{ fontWeight: 500 }}>{info.name}</span>
+
+                            {/* Move to Camp B Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleMovePersonaCamp({ id: pid }, 'B')}
+                              disabled={campAPersonaIds.length <= 1}
+                              title={campAPersonaIds.length <= 1 ? 'Camp A must have at least 1 agent' : 'Move to Camp B'}
+                              style={{
+                                background: 'rgba(192, 132, 252, 0.15)',
+                                border: '1px solid rgba(192, 132, 252, 0.35)',
+                                color: '#c084fc',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                fontSize: '10px',
+                                cursor: campAPersonaIds.length <= 1 ? 'not-allowed' : 'pointer',
+                                opacity: campAPersonaIds.length <= 1 ? 0.4 : 1,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '2px',
+                                marginLeft: '2px',
+                              }}
+                            >
+                              ⇄ B
+                            </button>
+
+                            {/* Remove Button */}
+                            {selectedPersonaIds.length > 2 && campAPersonaIds.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePersonaFromArena({ id: pid })}
+                                title={`Remove ${info.name}`}
+                                style={{
+                                  background: 'transparent',
+                                  border: 0,
+                                  color: 'var(--color-neutral-400)',
+                                  cursor: 'pointer',
+                                  padding: '0 2px',
+                                  fontSize: '13px',
+                                  lineHeight: 1,
+                                }}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* CAMP B CONTAINER */}
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(192, 132, 252, 0.06) 0%, rgba(6, 10, 18, 0.85) 100%)',
+                      border: '1px solid rgba(192, 132, 252, 0.3)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      boxShadow: '0 4px 20px rgba(192, 132, 252, 0.08)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: '#c084fc',
+                            boxShadow: '0 0 10px #c084fc',
+                          }}
+                        />
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                          Camp B • Counter / Right Pitch
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '10.5px',
+                            fontFamily: 'monospace',
+                            padding: '1px 7px',
+                            borderRadius: '999px',
+                            background: 'rgba(192, 132, 252, 0.15)',
+                            color: '#c084fc',
+                            border: '1px solid rgba(192, 132, 252, 0.3)',
+                          }}
+                        >
+                          {campBPersonaIds.length} {campBPersonaIds.length === 1 ? 'agent' : 'agents'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPersonaManagerModalOpen(true)}
+                        style={{
+                          background: 'transparent',
+                          border: '1px dashed rgba(192, 132, 252, 0.5)',
+                          color: '#c084fc',
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title="Add specialist persona to Camp B"
+                      >
+                        <i className="ph ph-plus" style={{ fontSize: '11px' }}></i>
+                        Add
+                      </button>
+                    </div>
+
+                    {/* Agent Chips in Camp B */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {campBPersonaIds.map((pid) => {
+                        const info = getAgentInfo(pid, { camp: 'Camp B' }, selectedPersonaIds);
+                        return (
+                          <div
+                            key={pid}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              background: 'rgba(192, 132, 252, 0.08)',
+                              border: '1px solid rgba(192, 132, 252, 0.25)',
+                              fontSize: '11.5px',
+                              color: '#f1f5f9',
+                            }}
+                          >
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: info.color }}></span>
+                            <span style={{ fontWeight: 500 }}>{info.name}</span>
+
+                            {/* Move to Camp A Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleMovePersonaCamp({ id: pid }, 'A')}
+                              disabled={campBPersonaIds.length <= 1}
+                              title={campBPersonaIds.length <= 1 ? 'Camp B must have at least 1 agent' : 'Move to Camp A'}
+                              style={{
+                                background: 'rgba(0, 245, 155, 0.15)',
+                                border: '1px solid rgba(0, 245, 155, 0.35)',
+                                color: '#00f59b',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                fontSize: '10px',
+                                cursor: campBPersonaIds.length <= 1 ? 'not-allowed' : 'pointer',
+                                opacity: campBPersonaIds.length <= 1 ? 0.4 : 1,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '2px',
+                                marginLeft: '2px',
+                              }}
+                            >
+                              ⇄ A
+                            </button>
+
+                            {/* Remove Button */}
+                            {selectedPersonaIds.length > 2 && campBPersonaIds.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePersonaFromArena({ id: pid })}
+                                title={`Remove ${info.name}`}
+                                style={{
+                                  background: 'transparent',
+                                  border: 0,
+                                  color: 'var(--color-neutral-400)',
+                                  cursor: 'pointer',
+                                  padding: '0 2px',
+                                  fontSize: '13px',
+                                  lineHeight: 1,
+                                }}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    flex: '1 1 360px',
                     display: 'flex',
-                    alignItems: 'center',
+                    alignItems: 'flex-start',
                     gap: '10px',
                     padding: '0 14px',
                     borderRadius: 'var(--radius-md)',
                     background: 'color-mix(in srgb, var(--color-bg) 70%, transparent)',
                     border: '1px solid var(--color-divider)',
                     minWidth: 0,
+                    minHeight: '50px',
+                    boxShadow: query.trim() ? '0 0 14px color-mix(in srgb, var(--color-accent) 20%, transparent)' : 'none',
+                    transition: 'border-color 0.18s ease, box-shadow 0.18s ease',
                   }}
                 >
-                  <i className="ph ph-magnifying-glass" style={{ fontSize: '18px', color: 'var(--color-neutral-500)' }}></i>
-                  <input
+                  <i
+                    className="ph ph-magnifying-glass"
+                    style={{
+                      fontSize: '18px',
+                      color: 'var(--color-neutral-500)',
+                      marginTop: '15px',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <textarea
+                    ref={queryInputRef}
+                    rows={1}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleStart()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleStart();
+                      }
+                    }}
                     placeholder="Enter any match or tactical question to deliberate... (e.g. Argentina vs France 2022 Final)"
                     style={{
                       flex: 1,
                       minWidth: 0,
-                      height: '48px',
+                      minHeight: '48px',
+                      maxHeight: '300px',
                       border: 0,
                       outline: 0,
                       background: 'transparent',
                       color: 'var(--color-neutral-100)',
                       font: '400 15px var(--font-body)',
+                      resize: 'none',
+                      overflowY: 'auto',
+                      lineHeight: '1.5',
+                      padding: '13px 0',
+                      boxSizing: 'border-box',
                     }}
                   />
+                  {query && (
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      title="Clear topic"
+                      style={{
+                        background: 'transparent',
+                        border: 0,
+                        color: 'var(--color-neutral-400)',
+                        cursor: 'pointer',
+                        padding: '14px 0 0 0',
+                        fontSize: '16px',
+                        lineHeight: 1,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="ph ph-x-circle"></i>
+                    </button>
+                  )}
                 </div>
                 {/* Rounds Dropdown Selector */}
                 <div
@@ -1509,50 +2251,97 @@ export default function App() {
                     <option value={5} style={{ background: '#0c1224', color: '#f1f5f9' }}>5 Rounds</option>
                   </select>
                 </div>
-                {/* Agent Count Selector (Feature Group F & Section 20) */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '0 12px',
-                    height: '50px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'color-mix(in srgb, var(--color-bg) 70%, transparent)',
-                    border: '1px solid var(--color-divider)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <i className="ph ph-users" style={{ fontSize: '16px', color: 'var(--color-accent)' }}></i>
-                  <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                    Agents:
-                  </span>
-                  <select
-                    value={selectedAgentCount}
-                    onChange={(e) => setSelectedAgentCount(Number(e.target.value))}
-                    disabled={isStarting}
-                    aria-label="Select number of agents in deliberation"
+                {/* Agent Count Selector in Dynamic Mode OR Roster Status in Curated Mode */}
+                {personaMode === 'dynamic' ? (
+                  <div
                     style={{
-                      background: 'transparent',
-                      border: 'none',
-                      outline: 'none',
-                      color: 'var(--color-neutral-100)',
-                      font: '600 13px var(--font-body)',
-                      cursor: 'pointer',
-                      padding: '4px 6px 4px 2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '0 12px',
+                      height: '50px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'color-mix(in srgb, var(--color-bg) 70%, transparent)',
+                      border: '1px solid rgba(168, 85, 247, 0.4)',
+                      flexShrink: 0,
                     }}
                   >
-                    <option value={2} style={{ background: '#0c1224', color: '#f1f5f9' }}>2 Agents (Head-to-Head)</option>
-                    <option value={3} style={{ background: '#0c1224', color: '#f1f5f9' }}>3 Agents (Triad)</option>
-                    <option value={4} style={{ background: '#0c1224', color: '#f1f5f9' }}>4 Agents (Tactical Box)</option>
-                    <option value={5} style={{ background: '#0c1224', color: '#f1f5f9' }}>5 Agents</option>
-                    <option value={6} style={{ background: '#0c1224', color: '#f1f5f9' }}>6 Agents (Full Pitch 3v3)</option>
-                  </select>
-                </div>
+                    <i className="ph ph-sparkle" style={{ fontSize: '16px', color: '#c084fc' }}></i>
+                    <span style={{ fontSize: '12px', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      Agents:
+                    </span>
+                    <select
+                      value={selectedAgentCount}
+                      onChange={(e) => setSelectedAgentCount(Number(e.target.value))}
+                      disabled={isStarting}
+                      aria-label="Select number of agents in dynamic deliberation"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        color: 'var(--color-neutral-100)',
+                        font: '600 13px var(--font-body)',
+                        cursor: 'pointer',
+                        padding: '4px 6px 4px 2px',
+                      }}
+                    >
+                      <option value={2} style={{ background: '#0c1224', color: '#f1f5f9' }}>2 Agents (1v1 Clash)</option>
+                      <option value={3} style={{ background: '#0c1224', color: '#f1f5f9' }}>3 Agents (Triad)</option>
+                      <option value={4} style={{ background: '#0c1224', color: '#f1f5f9' }}>4 Agents (2v2 Tactical Box)</option>
+                      <option value={5} style={{ background: '#0c1224', color: '#f1f5f9' }}>5 Agents</option>
+                      <option value={6} style={{ background: '#0c1224', color: '#f1f5f9' }}>6 Agents (Full Pitch 3v3)</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => setPersonaManagerModalOpen(true)}
+                    title="Click to manage active roster personas (Min 2, Max 6)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '0 12px',
+                      height: '50px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'color-mix(in srgb, var(--color-bg) 70%, transparent)',
+                      border: '1px solid var(--color-divider)',
+                      flexShrink: 0,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <i className="ph ph-users" style={{ fontSize: '16px', color: 'var(--color-accent)' }}></i>
+                    <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      Roster:
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
+                      {selectedPersonaIds.length}/6 (A:{campAPersonaIds.length} | B:{campBPersonaIds.length})
+                    </span>
+                  </div>
+                )}
                 <button
                   className="btn btn-primary"
                   onClick={() => handleStart()}
-                  disabled={isStarting || !query.trim()}
+                  disabled={
+                    isStarting ||
+                    !query.trim() ||
+                    (personaMode === 'custom' && (
+                      campAPersonaIds.length < 1 ||
+                      campBPersonaIds.length < 1 ||
+                      selectedPersonaIds.length < 2 ||
+                      selectedPersonaIds.length > 6
+                    ))
+                  }
+                  title={
+                    personaMode === 'custom' && campAPersonaIds.length < 1
+                      ? 'Camp A must have at least 1 agent'
+                      : personaMode === 'custom' && campBPersonaIds.length < 1
+                      ? 'Camp B must have at least 1 agent'
+                      : personaMode === 'custom' && selectedPersonaIds.length < 2
+                      ? 'Please select at least 2 personas for deliberation'
+                      : personaMode === 'custom' && selectedPersonaIds.length > 6
+                      ? 'Maximum 6 personas allowed for deliberation'
+                      : undefined
+                  }
                   style={{
                     height: '50px',
                     padding: '0 22px',
@@ -1666,7 +2455,7 @@ export default function App() {
                             fontVariantNumeric: 'tabular-nums',
                           }}
                         >
-                          {roundAlignment}%
+                          {roundAlignment != null ? `${roundAlignment}%` : '--'}
                         </span>{' '}
                         Consensus
                       </span>
@@ -1678,10 +2467,10 @@ export default function App() {
                       <div
                         style={{
                           height: '100%',
-                          width: `${roundAlignment}%`,
+                          width: roundAlignment != null ? `${roundAlignment}%` : '0%',
                           borderRadius: '999px',
                           background: 'linear-gradient(90deg, var(--color-accent-700), var(--color-accent))',
-                          boxShadow: '0 0 12px var(--color-accent)',
+                          boxShadow: roundAlignment != null ? '0 0 12px var(--color-accent)' : 'none',
                           transition: 'width .6s ease',
                         }}
                       ></div>
@@ -1739,10 +2528,10 @@ export default function App() {
 
                 {/* Football Pitch Agent Communication Graph (Image #1) */}
                 <AgentCommunicationPitch
-                  agents={currentDiscussion?.agents || activeAgents}
+                  agents={debateAgentRoster || currentDiscussion?.agents || activeAgents}
                   messages={rawMsgs}
                   activeRound={activeRound}
-                  consensus={roundAlignment || 54}
+                  consensus={roundAlignment ?? '--'}
                   cursor={cursor}
                   playing={playing}
                   activePassEvent={activePassEvent}
@@ -1863,7 +2652,7 @@ export default function App() {
                   )}
 
                   {rawMsgs.slice(0, cursor).map((m, idx) => {
-                    const agent = getAgentInfo(m.sender_id, null, currentDiscussion?.agents);
+                    const agent = getAgentInfo(m.sender_id, null, debateAgentRoster || currentDiscussion?.agents);
                     const roundStart = idx === 0 || rawMsgs[idx - 1]?.round_num !== m.round_num;
 
                     return (
@@ -2333,7 +3122,7 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <span style={{ fontSize: '42px', fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--color-accent-200)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-                        {roundAlignment}%
+                        {roundAlignment != null ? `${roundAlignment}%` : '--'}
                       </span>
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)' }}>
                         Round {activeRound} Consensus
@@ -2342,7 +3131,7 @@ export default function App() {
                     <div style={{ width: '1px', height: '38px', background: 'var(--color-divider)' }}></div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <span style={{ fontSize: '28px', fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--color-accent-300)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-                        {consensus}%
+                        {consensus != null ? `${consensus}%` : '--'}
                       </span>
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
                         Overall Consensus
@@ -2357,7 +3146,7 @@ export default function App() {
                       {activeSynthesisData?.tactical_verdict
                         ? activeSynthesisData.tactical_verdict
                         : (currentAnalytics?.overall_trend && currentAnalytics.overall_trend !== 'Insufficient Data'
-                          ? `Trend: ${currentAnalytics.overall_trend}. Top influential arbiter: ${getAgentInfo(currentAnalytics.top_influencer, null, currentDiscussion?.agents).name}.`
+                          ? `Trend: ${currentAnalytics.overall_trend}. Top influential arbiter: ${getAgentInfo(currentAnalytics.top_influencer, null, debateAgentRoster || currentDiscussion?.agents).name}.`
                           : `Deliberation on "${currentDiscussion.topic}" synthesized across ${rawMsgs.length} messages with active perspective convergence.`)}
                     </p>
                   </div>
@@ -2505,7 +3294,7 @@ export default function App() {
 
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '12px' }}>
                             {activeSynthesisData.agent_evaluations.map((evalItem) => {
-                              const aInfo = getAgentInfo(evalItem.agent_id, null, currentDiscussion?.agents);
+                              const aInfo = getAgentInfo(evalItem.agent_id, null, debateAgentRoster || currentDiscussion?.agents);
                               const rating = evalItem.performance_rating || 'Analytical';
 
                               let badgeBg = 'color-mix(in srgb, var(--color-accent) 15%, transparent)';
@@ -2661,7 +3450,7 @@ export default function App() {
                         const isHovered = hoverAgent === id;
                         const opacity = hoverAgent && !isHovered ? 0.18 : 1;
                         const strokeWidth = isHovered ? 3.5 : 2;
-                        const a = getAgentInfo(id, null, currentDiscussion?.agents);
+                        const a = getAgentInfo(id, null, debateAgentRoster || currentDiscussion?.agents);
                         const measuredPts = pts.filter((v) => v != null);
                         const lastPt = measuredPts[measuredPts.length - 1];
                         return (
@@ -2689,7 +3478,7 @@ export default function App() {
 
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       {derivedTrajectories ? Object.keys(derivedTrajectories).map((id) => {
-                        const a = getAgentInfo(id, null, currentDiscussion?.agents);
+                        const a = getAgentInfo(id, null, debateAgentRoster || currentDiscussion?.agents);
                         return (
                           <button
                             key={id}
@@ -2735,7 +3524,7 @@ export default function App() {
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>Share of consensus shift</span>
                     </div>
                     {derivedInfluence ? derivedInfluence.map((f, i) => {
-                      const agent = getAgentInfo(f.id, null, currentDiscussion?.agents);
+                      const agent = getAgentInfo(f.id, null, debateAgentRoster || currentDiscussion?.agents);
                       return (
                         <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
@@ -2864,7 +3653,7 @@ export default function App() {
                           <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top Causal Arbiter</span>
                           <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
-                              {getAgentInfo(activeCausalData.top_causal_influencer, null, currentDiscussion?.agents).name}
+                              {getAgentInfo(activeCausalData.top_causal_influencer, null, debateAgentRoster || currentDiscussion?.agents).name}
                             </span>
                           </div>
                         </div>
@@ -2889,7 +3678,7 @@ export default function App() {
                         </h4>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
                           {Object.entries(activeCausalData.agent_causal_influences || {}).map(([aid, info]) => {
-                            const agent = getAgentInfo(aid, null, currentDiscussion?.agents);
+                            const agent = getAgentInfo(aid, null, debateAgentRoster || currentDiscussion?.agents);
                             const score = info.causal_score != null ? info.causal_score : 0;
                             const isTop = aid === activeCausalData.top_causal_influencer && info.causal_score != null;
                             return (
@@ -2957,8 +3746,8 @@ export default function App() {
                             .filter((ex) => ex.causal_shift > 0 || expandedExchanges)
                             .slice(0, expandedExchanges ? 20 : 3)
                             .map((ex, idx) => {
-                              const sender = getAgentInfo(ex.sender_id, null, currentDiscussion?.agents);
-                              const recipient = getAgentInfo(ex.recipient_id, null, currentDiscussion?.agents);
+                              const sender = getAgentInfo(ex.sender_id, null, debateAgentRoster || currentDiscussion?.agents);
+                              const recipient = getAgentInfo(ex.recipient_id, null, debateAgentRoster || currentDiscussion?.agents);
                               return (
                                 <div
                                   key={idx}
@@ -3217,9 +4006,12 @@ export default function App() {
         isOpen={personaManagerModalOpen}
         token={token}
         onClose={() => setPersonaManagerModalOpen(false)}
-        onSelectPersonaForArena={() => {
-          navigateTo('arena');
-        }}
+        campAPersonaIds={campAPersonaIds}
+        campBPersonaIds={campBPersonaIds}
+        onAssignPersonaToCamp={handleAssignPersonaToCamp}
+        onMovePersonaCamp={handleMovePersonaCamp}
+        onRemovePersonaFromArena={handleRemovePersonaFromArena}
+        onPersonasLoaded={registerCustomPersonas}
       />
     </div>
   );

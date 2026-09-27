@@ -89,6 +89,7 @@ function linePath(values, x, y) {
 function Panel({ series, meanValues, rounds, hoverIdx, setHoverIdx, index }) {
   const [ref, width] = useWidth();
   const agent = getAgentInfo(series.id);
+  const agentColor = agent.color || agent.strokeColor || ACCENT;
   const n = rounds.length;
   const plotW = Math.max(0, width - PAD.left - PAD.right);
   const x = (i) => PAD.left + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
@@ -116,7 +117,7 @@ function Panel({ series, meanValues, rounds, hoverIdx, setHoverIdx, index }) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className={`material-symbols-outlined text-[15px] ${agent.textColor}`}>{agent.icon}</span>
+          <span className="material-symbols-outlined text-[15px]" style={{ color: agentColor }}>{agent.icon}</span>
           <span className="font-headline text-[12px] font-semibold text-white truncate">{agent.name}</span>
         </div>
         <div className="flex flex-col items-end flex-shrink-0">
@@ -153,7 +154,7 @@ function Panel({ series, meanValues, rounds, hoverIdx, setHoverIdx, index }) {
               {d && series.values.every((v) => typeof v === 'number') && (
                 <path
                   d={`${d} L ${x(n - 1)},${baseline} L ${x(0)},${baseline} Z`}
-                  fill={ACCENT}
+                  fill={agentColor}
                   fillOpacity="0.08"
                   className="fade-in-late"
                 />
@@ -163,7 +164,7 @@ function Panel({ series, meanValues, rounds, hoverIdx, setHoverIdx, index }) {
               <path
                 d={d}
                 fill="none"
-                stroke={ACCENT}
+                stroke={agentColor}
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -182,7 +183,7 @@ function Panel({ series, meanValues, rounds, hoverIdx, setHoverIdx, index }) {
                   cx={x(hoverIdx === null ? endIdx : hoverIdx)}
                   cy={y(hoverIdx === null ? end : series.values[hoverIdx])}
                   r="4"
-                  fill={ACCENT}
+                  fill={agentColor}
                   stroke={SURFACE}
                   strokeWidth="2"
                 />
@@ -324,7 +325,12 @@ export default function OpinionTrajectories({ analytics }) {
                 const b = lastValue(s.values);
                 return (
                   <tr key={s.id} className="border-t border-white/[0.05] text-on-surface hover:bg-white/[0.02]">
-                    <td className="px-3 py-2 font-sans text-white whitespace-nowrap">{getAgentInfo(s.id).name}</td>
+                    <td className="px-3 py-2 font-sans text-white whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getAgentInfo(s.id).color }} />
+                        <span>{getAgentInfo(s.id).name}</span>
+                      </div>
+                    </td>
                     {s.values.map((v, i) => (
                       <td key={i} className="px-3 py-2 text-right">
                         {fmt(v)}

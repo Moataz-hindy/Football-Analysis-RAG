@@ -105,6 +105,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Force regeneration of dynamic personas even if cached in personas/generated/<id>/.",
     )
     parser.add_argument(
+        "--persona-ids",
+        default="",
+        help="Comma-separated list of persona IDs to use (system or custom user personas).",
+    )
+    parser.add_argument(
+        "--camp-a-ids",
+        default="",
+        help="Comma-separated list of persona IDs assigned to Camp A (Thesis / Home).",
+    )
+    parser.add_argument(
+        "--camp-b-ids",
+        default="",
+        help="Comma-separated list of persona IDs assigned to Camp B (Antithesis / Away).",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         dest="overwrite",
@@ -143,12 +158,104 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=Path(args.personas_dir) / "generated",
             force_regenerate=args.force_regenerate,
         )
-        graph = DiscussionGraph.create_symmetrical_3v3(
-            camp_a=manifest["camp_a"],
-            camp_b=manifest["camp_b"],
-        )
+        n_agents = getattr(args, "agents", 6) or 6
+        if n_agents == 6:
+            graph = DiscussionGraph.create_symmetrical_3v3(
+                camp_a=manifest["camp_a"],
+                camp_b=manifest["camp_b"],
+            )
+        else:
+            # Pairwise balanced selection between Camp A and Camp B (2 to 5 agents)
+            camp_a_roles = manifest["camp_a"]
+            camp_b_roles = manifest["camp_b"]
+            interleaved = [
+                camp_a_roles["coach"],
+                camp_b_roles["coach"],
+                camp_a_roles["fan"],
+                camp_b_roles["fan"],
+                camp_a_roles["pundit"],
+                camp_b_roles["pundit"],
+            ]
+            chosen_dynamic_ids = interleaved[:n_agents]
+            graph = DiscussionGraph.build_dynamic_discussion_graph(chosen_dynamic_ids)
+
         router = GraphRouter(graph=graph)
-        persona_files = persona_files_map
+        active_ids = set(router.graph.graph.nodes)
+        persona_files = {aid: persona_files_map[aid] for aid in active_ids if aid in persona_files_map}
+
+        for agent_id in sorted(router.graph.graph.nodes):
+            persona = personas_dict[agent_id]
+            retrieval = RAGRetrieval(k=6)
+            config = AgentConfig(
+                persona=persona,
+                memory=ConversationMemory(llm=llm),
+                retrieval=retrieval,
+                tools=ToolRegistry(
+                    tools=[
+                        CalculatorTool(),
+                        KnowledgeSearchTool(retrieval=retrieval),
+                        WebSearchTool(),
+                    ]
+                ),
+                llm=llm,
+            )
+            agents[agent_id] = Agent(config, max_tool_rounds=3)
+    elif getattr(args, "camp_a_ids", None) or getattr(args, "persona_ids", None):
+        from src.discussion.graph import DiscussionGraph
+        from src.platform.personas import get_persona_by_id
+        import yaml
+
+        camp_a_raw = [pid.strip() for pid in getattr(args, "camp_a_ids", "").split(",") if pid.strip()]
+        camp_b_raw = [pid.strip() for pid in getattr(args, "camp_b_ids", "").split(",") if pid.strip()]
+        if camp_a_raw and camp_b_raw:
+            selected_ids = camp_a_raw + camp_b_raw
+        else:
+            selected_ids = [pid.strip() for pid in getattr(args, "persona_ids", "").split(",") if pid.strip()]
+            half = max(1, len(selected_ids) // 2)
+            camp_a_raw = selected_ids[:half]
+            camp_b_raw = selected_ids[half:]
+
+        personas_dict = {}
+        for aid in selected_ids:
+            p = get_persona_by_id(aid)
+            if p:
+                personas_dict[aid] = p
+                gen_dir = Path(args.personas_dir) / "generated" / discussion_id
+                gen_dir.mkdir(parents=True, exist_ok=True)
+                p_yaml = gen_dir / f"{aid}.yaml"
+                if not p_yaml.exists():
+                    p_yaml.write_text(
+                        yaml.safe_dump({
+                            "name": p.name,
+                            "background": p.background,
+                            "stance": p.stance,
+                            "communication_style": p.communication_style,
+                            "expertise": p.expertise,
+                            "priorities": p.priorities,
+                        }),
+                        encoding="utf-8",
+                    )
+                persona_files[aid] = str(p_yaml)
+
+        valid_a = [aid for aid in camp_a_raw if aid in personas_dict]
+        valid_b = [aid for aid in camp_b_raw if aid in personas_dict]
+        valid_ids = valid_a + valid_b
+        if len(valid_ids) < 2 or len(valid_ids) > 6:
+            raise ValueError(
+                f"Curated roster requires between 2 and 6 valid personas (received {len(valid_ids)})."
+            )
+        if len(valid_a) < 1 or len(valid_b) < 1:
+            raise ValueError(
+                f"Both Camp A and Camp B must have at least 1 persona (got A:{len(valid_a)}, B:{len(valid_b)})."
+            )
+
+        graph = DiscussionGraph.build_dynamic_discussion_graph(valid_ids)
+        router = GraphRouter(graph=graph)
+
+        manifest = {
+            "camp_a": {"name": "Camp A", "ids": valid_a},
+            "camp_b": {"name": "Camp B", "ids": valid_b},
+        }
 
         for agent_id in sorted(router.graph.graph.nodes):
             persona = personas_dict[agent_id]

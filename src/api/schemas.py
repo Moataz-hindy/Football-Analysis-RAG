@@ -2,7 +2,7 @@
 
 import re
 from typing import Any, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ── Health Check ──
@@ -81,10 +81,57 @@ class StartDiscussionRequest(BaseModel):
         default=False,
         description="Whether to generate dynamic 3v3 polarized personas via LLM (defaults to the 6 specialist system personas).",
     )
+    persona_ids: list[str] | None = Field(
+        default=None,
+        description="Explicit list of persona IDs (system or custom user personas) to participate in the deliberation.",
+    )
+    camp_a_ids: list[str] | None = Field(
+        default=None,
+        description="Explicit list of persona IDs assigned to Camp A (Thesis / Home).",
+    )
+    camp_b_ids: list[str] | None = Field(
+        default=None,
+        description="Explicit list of persona IDs assigned to Camp B (Antithesis / Away).",
+    )
     force_regenerate: bool = Field(
         default=False,
         description="Force regeneration of dynamic personas if cached.",
     )
+
+    @field_validator("persona_ids", "camp_a_ids", "camp_b_ids")
+    @classmethod
+    def clean_string_list(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            return [p.strip() for p in v if isinstance(p, str) and p.strip()]
+        return v
+
+    @model_validator(mode="after")
+    def validate_camps_and_roster(self) -> "StartDiscussionRequest":
+        if self.camp_a_ids is not None or self.camp_b_ids is not None:
+            a_ids = self.camp_a_ids or []
+            b_ids = self.camp_b_ids or []
+            if len(a_ids) < 1 or len(b_ids) < 1:
+                raise ValueError("Both Camp A and Camp B must have at least 1 agent.")
+            if len(set(a_ids)) != len(a_ids):
+                raise ValueError("Duplicate persona IDs in Camp A are not allowed.")
+            if len(set(b_ids)) != len(b_ids):
+                raise ValueError("Duplicate persona IDs in Camp B are not allowed.")
+            overlap = set(a_ids).intersection(set(b_ids))
+            if overlap:
+                raise ValueError(f"Agent(s) {list(overlap)} cannot be assigned to both Camp A and Camp B.")
+            total = len(a_ids) + len(b_ids)
+            if total < 2 or total > 6:
+                raise ValueError(f"Total curated agents across camps must be between 2 and 6 (received {total}).")
+            self.persona_ids = a_ids + b_ids
+        elif self.persona_ids is not None:
+            cleaned = self.persona_ids
+            if len(cleaned) < 2 or len(cleaned) > 6:
+                raise ValueError(
+                    f"Curated roster must contain between 2 and 6 personas (received {len(cleaned)})."
+                )
+            if len(set(cleaned)) != len(cleaned):
+                raise ValueError("Duplicate persona IDs in curated roster are not allowed.")
+        return self
 
     @field_validator("discussion_id", mode="before")
     @classmethod

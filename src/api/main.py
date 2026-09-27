@@ -16,6 +16,7 @@ try:
 except ImportError:
     pass
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -255,7 +256,7 @@ async def handle_request_validation_error(request: Request, exc: RequestValidati
     logger.warning("Request validation error on %s: %s", request.url.path, exc)
     return JSONResponse(
         status_code=422,
-        content={"error": "Unprocessable Entity", "detail": exc.errors()},
+        content=jsonable_encoder({"error": "Unprocessable Entity", "detail": exc.errors()}),
     )
 
 

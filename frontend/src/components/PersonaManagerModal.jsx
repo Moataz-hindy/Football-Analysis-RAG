@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AGENT_DISTINCT_COLORS, DISTINCT_PALETTE } from '../constants/agents.js';
 
 /**
  * Persona Manager Modal: System Personas, Custom Personas & AI Generation.
@@ -26,7 +27,12 @@ export default function PersonaManagerModal({
   isOpen,
   token,
   onClose,
-  onSelectPersonaForArena,
+  campAPersonaIds = [],
+  campBPersonaIds = [],
+  onAssignPersonaToCamp,
+  onRemovePersonaFromArena,
+  onMovePersonaCamp,
+  onPersonasLoaded,
 }) {
   const [personas, setPersonas] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -56,6 +62,9 @@ export default function PersonaManagerModal({
       if (res.ok) {
         const data = await res.json();
         setPersonas(data);
+        if (onPersonasLoaded && Array.isArray(data)) {
+          onPersonasLoaded(data);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch personas:', err);
@@ -175,7 +184,28 @@ export default function PersonaManagerModal({
             <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
               Specialist Agent Roster
             </h2>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              {(() => {
+                const totalSelected = campAPersonaIds.length + campBPersonaIds.length;
+                return (
+                  <div
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-mono font-semibold"
+                    style={{
+                      backgroundColor: totalSelected >= 6 ? 'rgba(251, 191, 36, 0.15)' : 'rgba(0, 245, 155, 0.15)',
+                      borderColor: totalSelected >= 6 ? 'rgba(251, 191, 36, 0.4)' : 'rgba(0, 245, 155, 0.3)',
+                      color: totalSelected >= 6 ? '#fbbf24' : '#00f59b',
+                    }}
+                  >
+                    <i className="ph ph-users font-bold"></i>
+                    <span>
+                      Roster: {totalSelected} / 6
+                      <span className="text-neutral-400 font-normal ml-1">
+                        (A: <strong className="text-[#00f59b]">{campAPersonaIds.length}</strong> | B: <strong className="text-[#c084fc]">{campBPersonaIds.length}</strong>)
+                      </span>
+                    </span>
+                  </div>
+                );
+              })()}
               <button
                 onClick={() => { setActiveTab('create_manual'); setError(null); }}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
@@ -343,13 +373,36 @@ export default function PersonaManagerModal({
             </span>
           </div>
 
+          {/* Roster Limit Helper Banner */}
+          <div className="flex items-center justify-between text-xs px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="flex items-center gap-2 text-neutral-300">
+              <i className="ph ph-scales text-[#00f59b] text-sm"></i>
+              <span>Assign specialists to <strong>Camp A</strong> (Thesis / Left Pitch) or <strong>Camp B</strong> (Counter / Right Pitch).</span>
+            </div>
+            <span className="font-mono text-neutral-400 text-[11.5px]">
+              {(campAPersonaIds || []).length + (campBPersonaIds || []).length} of 6 selected
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {personas.map((p) => {
+            {personas.map((p, pIdx) => {
               const isSystem = p.source === 'system';
+              const inCampA = (campAPersonaIds || []).includes(p.id);
+              const inCampB = (campBPersonaIds || []).includes(p.id);
+              const totalSelected = (campAPersonaIds || []).length + (campBPersonaIds || []).length;
+              const isAtMax = totalSelected >= 6;
+              const pColor = AGENT_DISTINCT_COLORS[p.id] || (p.color && p.color !== '#00f59b' && p.color !== '#818cf8' ? p.color : DISTINCT_PALETTE[(pIdx + 6) % DISTINCT_PALETTE.length]);
+
               return (
                 <div
                   key={p.id}
-                  className="rounded-xl bg-[#080d19] border border-white/[0.08] p-4 flex flex-col justify-between hover:border-white/[0.2] transition-all space-y-3"
+                  className={`rounded-xl p-4 flex flex-col justify-between transition-all space-y-3 ${
+                    inCampA
+                      ? 'bg-[#0a1b14] border-2 border-[#00f59b] shadow-[0_0_18px_rgba(0,245,155,0.22)]'
+                      : inCampB
+                      ? 'bg-[#150f24] border-2 border-[#c084fc] shadow-[0_0_18px_rgba(192,132,252,0.22)]'
+                      : 'bg-[#080d19] border border-white/[0.08] hover:border-white/[0.2]'
+                  }`}
                 >
                   <div className="flex flex-col space-y-2">
                     <div className="flex items-start justify-between gap-2">
@@ -357,9 +410,9 @@ export default function PersonaManagerModal({
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm"
                           style={{
-                            background: `color-mix(in srgb, ${p.color || '#00f59b'} 15%, transparent)`,
-                            color: p.color || '#00f59b',
-                            border: `1px solid ${p.color || '#00f59b'}`,
+                            background: `color-mix(in srgb, ${pColor} 15%, transparent)`,
+                            color: pColor,
+                            border: `1px solid ${pColor}`,
                           }}
                         >
                           <i className={p.icon || 'ph ph-user'}></i>
@@ -419,16 +472,137 @@ export default function PersonaManagerModal({
                           Delete
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onSelectPersonaForArena) onSelectPersonaForArena(p);
-                          onClose();
-                        }}
-                        className="px-3 py-1 rounded bg-white/[0.06] hover:bg-[#00f59b]/20 hover:text-[#00f59b] text-white text-[11.5px] font-medium transition-colors"
-                      >
-                        Select for Arena
-                      </button>
+
+                      {(() => {
+                        if (inCampA) {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-[#00f59b]/20 text-[#00f59b] border border-[#00f59b]/40">
+                                In Camp A
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (campAPersonaIds.length <= 1) {
+                                    setError("Camp A must have at least 1 agent.");
+                                    return;
+                                  }
+                                  setError(null);
+                                  if (onMovePersonaCamp) onMovePersonaCamp(p, 'B');
+                                }}
+                                title="Move this agent to Camp B"
+                                className="px-2 py-1 rounded text-[11px] font-semibold bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/40 flex items-center gap-1 transition-all cursor-pointer"
+                              >
+                                ⇄ Camp B
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (totalSelected <= 2) {
+                                    setError("A deliberation requires at least 2 active personas in total.");
+                                    return;
+                                  }
+                                  if (campAPersonaIds.length <= 1) {
+                                    setError("Camp A must retain at least 1 agent.");
+                                    return;
+                                  }
+                                  setError(null);
+                                  if (onRemovePersonaFromArena) onRemovePersonaFromArena(p);
+                                }}
+                                title="Remove from arena"
+                                className="px-2 py-1 rounded text-[11px] font-semibold text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (inCampB) {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                                In Camp B
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (campBPersonaIds.length <= 1) {
+                                    setError("Camp B must have at least 1 agent.");
+                                    return;
+                                  }
+                                  setError(null);
+                                  if (onMovePersonaCamp) onMovePersonaCamp(p, 'A');
+                                }}
+                                title="Move this agent to Camp A"
+                                className="px-2 py-1 rounded text-[11px] font-semibold bg-[#00f59b]/15 hover:bg-[#00f59b]/25 text-[#00f59b] border border-[#00f59b]/40 flex items-center gap-1 transition-all cursor-pointer"
+                              >
+                                ⇄ Camp A
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (totalSelected <= 2) {
+                                    setError("A deliberation requires at least 2 active personas in total.");
+                                    return;
+                                  }
+                                  if (campBPersonaIds.length <= 1) {
+                                    setError("Camp B must retain at least 1 agent.");
+                                    return;
+                                  }
+                                  setError(null);
+                                  if (onRemovePersonaFromArena) onRemovePersonaFromArena(p);
+                                }}
+                                title="Remove from arena"
+                                className="px-2 py-1 rounded text-[11px] font-semibold text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (isAtMax) {
+                          return (
+                            <button
+                              type="button"
+                              disabled
+                              title="Maximum 6 agents allowed for deliberation. Deselect an agent before adding this one."
+                              className="px-2.5 py-1.5 rounded text-[11px] font-semibold bg-white/[0.03] text-neutral-500 cursor-not-allowed border border-white/[0.06] flex items-center gap-1"
+                            >
+                              <i className="ph ph-prohibit"></i>
+                              Max 6 Reached
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setError(null);
+                                if (onAssignPersonaToCamp) onAssignPersonaToCamp(p, 'A');
+                              }}
+                              className="px-2.5 py-1 rounded text-[11px] font-semibold bg-[#00f59b]/10 hover:bg-[#00f59b] hover:text-black text-[#00f59b] border border-[#00f59b]/30 transition-all flex items-center gap-1 cursor-pointer"
+                              title="Add to Camp A (Thesis / Pitch Left)"
+                            >
+                              <i className="ph ph-plus font-bold"></i> Camp A
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setError(null);
+                                if (onAssignPersonaToCamp) onAssignPersonaToCamp(p, 'B');
+                              }}
+                              className="px-2.5 py-1 rounded text-[11px] font-semibold bg-purple-500/10 hover:bg-purple-500 hover:text-white text-purple-300 border border-purple-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                              title="Add to Camp B (Counter / Pitch Right)"
+                            >
+                              <i className="ph ph-plus font-bold"></i> Camp B
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

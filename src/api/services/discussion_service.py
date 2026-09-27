@@ -338,6 +338,12 @@ def _execute_discussion(
         cmd.append("--dynamic-personas")
     if getattr(request, "force_regenerate", False):
         cmd.append("--force-regenerate")
+    if getattr(request, "persona_ids", None):
+        cmd.extend(["--persona-ids", ",".join(request.persona_ids)])
+    if getattr(request, "camp_a_ids", None):
+        cmd.extend(["--camp-a-ids", ",".join(request.camp_a_ids)])
+    if getattr(request, "camp_b_ids", None):
+        cmd.extend(["--camp-b-ids", ",".join(request.camp_b_ids)])
 
     return run_discussion(cmd)
 
@@ -467,14 +473,49 @@ async def enqueue_discussion(
         }
 
         if not job_request.dynamic_personas:
-            agent_ids, adjacency = _default_graph_summary(
-                getattr(job_request, "num_agents", 6) or 6
-            )
-            runtime_details["agent_ids"] = list(agent_ids)
-            runtime_details["graph"] = dict(adjacency)
-            runtime_details["persona_files"] = {
-                agent_id: f"{agent_id}.yaml" for agent_id in agent_ids
-            }
+            if getattr(job_request, "camp_a_ids", None) and getattr(job_request, "camp_b_ids", None):
+                a_ids = list(job_request.camp_a_ids)
+                b_ids = list(job_request.camp_b_ids)
+                agent_ids = a_ids + b_ids
+                runtime_details["agent_ids"] = agent_ids
+                runtime_details["persona_files"] = {
+                    aid: f"{aid}.yaml" for aid in agent_ids
+                }
+                runtime_details["camps"] = {
+                    "camp_a": {"name": "Camp A", "ids": a_ids},
+                    "camp_b": {"name": "Camp B", "ids": b_ids},
+                }
+                from src.discussion.graph import DiscussionGraph
+                try:
+                    dg = DiscussionGraph.build_dynamic_discussion_graph(agent_ids)
+                    runtime_details["graph"] = {
+                        u: sorted(dg.get_outbound_edges(u)) for u in agent_ids
+                    }
+                except Exception:
+                    runtime_details["graph"] = {}
+            elif getattr(job_request, "persona_ids", None):
+                agent_ids = list(job_request.persona_ids)
+                runtime_details["agent_ids"] = agent_ids
+                runtime_details["persona_files"] = {
+                    aid: f"{aid}.yaml" for aid in agent_ids
+                }
+                from src.discussion.graph import DiscussionGraph
+                try:
+                    dg = DiscussionGraph.build_dynamic_discussion_graph(agent_ids)
+                    runtime_details["graph"] = {
+                        u: sorted(dg.get_outbound_edges(u)) for u in agent_ids
+                    }
+                except Exception:
+                    runtime_details["graph"] = {}
+            else:
+                agent_ids, adjacency = _default_graph_summary(
+                    getattr(job_request, "num_agents", 6) or 6
+                )
+                runtime_details["agent_ids"] = list(agent_ids)
+                runtime_details["graph"] = dict(adjacency)
+                runtime_details["persona_files"] = {
+                    agent_id: f"{agent_id}.yaml" for agent_id in agent_ids
+                }
 
         _pending_details[discussion_id] = runtime_details
 

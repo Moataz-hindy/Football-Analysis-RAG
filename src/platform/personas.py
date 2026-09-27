@@ -47,12 +47,12 @@ def get_system_personas() -> list[PersonaOut]:
         return system_personas
 
     field_map = {
-        "tactical_analyst": ("Tactical Analysis", "ph ph-strategy", "#10b981"),
-        "statistical_analyst": ("Statistics & Analytics", "ph ph-chart-line-up", "#38bdf8"),
-        "fan_analyst": ("Fan & Media Narrative", "ph ph-users-three", "#ec4899"),
-        "refereeing_analyst": ("Refereeing & Laws", "ph ph-flag", "#fbbf24"),
+        "tactical_analyst": ("Tactical Analysis", "ph ph-strategy", "#00f59b"),
+        "statistical_analyst": ("Statistics & Analytics", "ph ph-chart-line-up", "#00d2ff"),
         "performance_analyst": ("Physical & Performance", "ph ph-heartbeat", "#f43f5e"),
-        "context_analyst": ("Historical Context", "ph ph-books", "#a78bfa"),
+        "fan_analyst": ("Fan & Media Narrative", "ph ph-users-three", "#fbbf24"),
+        "refereeing_analyst": ("Refereeing & Laws", "ph ph-flag", "#a855f7"),
+        "context_analyst": ("Historical Context", "ph ph-books", "#fb923c"),
     }
 
     for yaml_path in sorted(PERSONAS_DIR.glob("*.yaml")):
@@ -92,7 +92,10 @@ def get_all_personas_for_profile(profile_id: str) -> list[PersonaOut]:
             (profile_id,),
         )
         rows = cur.fetchall()
+        palette = ["#38bdf8", "#ec4899", "#34d399", "#818cf8", "#f97316", "#06b6d4", "#e11d48", "#10b981", "#8b5cf6", "#f59e0b"]
         for r in rows:
+            field_entry = next((f for f in PERSONA_FIELDS if f["name"] == r["field"]), None)
+            assigned_color = field_entry["color"] if field_entry else palette[abs(hash(r["id"])) % len(palette)]
             personas.append(
                 PersonaOut(
                     id=r["id"],
@@ -108,10 +111,49 @@ def get_all_personas_for_profile(profile_id: str) -> list[PersonaOut]:
                     is_active=bool(r["is_active"]),
                     created_at=str(r["created_at"]),
                     icon="ph ph-sparkle" if r["source"] == "generated" else "ph ph-user-circle",
-                    color="#818cf8" if r["source"] == "generated" else "#00f59b",
+                    color=assigned_color,
                 )
             )
     return personas
+
+
+def get_persona_by_id(persona_id: str) -> Persona | None:
+    """Load a persona by its identifier, checking system YAMLs then custom DB records."""
+    yaml_path = PERSONAS_DIR / f"{persona_id}.yaml"
+    if yaml_path.is_file():
+        try:
+            return load_persona(yaml_path)
+        except Exception as e:
+            logger.warning("Failed loading system persona YAML '%s': %s", yaml_path, e)
+
+    # Check generated folder
+    for gen_p in PERSONAS_DIR.glob(f"generated/*/{persona_id}.yaml"):
+        if gen_p.is_file():
+            try:
+                return load_persona(gen_p)
+            except Exception:
+                pass
+
+    # Check database
+    try:
+        with get_db_cursor() as cur:
+            cur.execute("SELECT * FROM profile_personas WHERE id = ?", (persona_id,))
+            r = cur.fetchone()
+            if r:
+                exp = json.loads(r["expertise"]) if isinstance(r["expertise"], str) else (r["expertise"] or [])
+                prio = json.loads(r["priorities"]) if isinstance(r["priorities"], str) else (r["priorities"] or [])
+                return Persona(
+                    _name=r["name"],
+                    _background=r["background"],
+                    _stance=r["stance"],
+                    _communication_style=r["communication_style"],
+                    _expertise=exp,
+                    _priorities=prio,
+                )
+    except Exception as e:
+        logger.warning("Failed querying profile_personas for ID '%s': %s", persona_id, e)
+
+    return None
 
 
 def create_profile_persona(profile_id: str, req: PersonaCreate) -> PersonaOut:
@@ -170,7 +212,7 @@ def create_profile_persona(profile_id: str, req: PersonaCreate) -> PersonaOut:
                 json.dumps(expertise),
                 json.dumps(priorities),
                 "user",
-                1,
+                True,
                 now_str,
                 now_str,
             ),
@@ -218,7 +260,7 @@ def update_profile_persona(profile_id: str, persona_id: str, req: PersonaUpdate)
         comm_style = req.communication_style.strip() if req.communication_style is not None else r["communication_style"]
         expertise = req.expertise if req.expertise is not None else (json.loads(r["expertise"]) if isinstance(r["expertise"], str) else r["expertise"])
         priorities = req.priorities if req.priorities is not None else (json.loads(r["priorities"]) if isinstance(r["priorities"], str) else r["priorities"])
-        is_active = int(req.is_active) if req.is_active is not None else r["is_active"]
+        is_active = bool(req.is_active) if req.is_active is not None else bool(r["is_active"])
         now_str = datetime.now(timezone.utc).isoformat()
 
         cur.execute(

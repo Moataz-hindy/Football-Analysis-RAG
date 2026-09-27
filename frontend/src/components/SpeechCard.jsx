@@ -14,7 +14,7 @@ export default function SpeechCard({ agent, meta, badge, content, stats, action,
   return (
     <div
       className="speech-card card-enter w-full rounded-2xl bg-[#0d0f18]/90 border border-white/[0.08] p-4 relative flex flex-col space-y-3 shadow-lg hover:border-white/[0.14]"
-      style={{ '--agent-color': agent.strokeColor, animationDelay: `${Math.min(index, 8) * 60}ms` }}
+      style={{ '--agent-color': agent.strokeColor || agent.color, animationDelay: `${Math.min(index, 8) * 60}ms` }}
       onMouseEnter={onHover ? () => onHover(agent.id) : undefined}
       onMouseLeave={onHover ? () => onHover(null) : undefined}
     >
@@ -22,6 +22,11 @@ export default function SpeechCard({ agent, meta, badge, content, stats, action,
         <div className="flex items-center gap-3">
           <div
             className={`speech-avatar w-10 h-10 rounded-xl bg-surface-container-high border ${agent.border} flex items-center justify-center ${agent.textColor} ${agent.shadow} flex-shrink-0`}
+            style={{
+              borderColor: agent.color ? `${agent.color}50` : undefined,
+              color: agent.color || undefined,
+              boxShadow: agent.color ? `0 0 10px ${agent.color}33` : undefined,
+            }}
           >
             <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
               {agent.icon}
@@ -30,7 +35,7 @@ export default function SpeechCard({ agent, meta, badge, content, stats, action,
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="font-headline text-[13px] font-bold text-white">{agent.name}</span>
-              <span className={`font-mono text-[11px] ${agent.textColor}`}>#{agent.code}</span>
+              <span className={`font-mono text-[11px] ${agent.textColor}`} style={{ color: agent.color || undefined }}>#{agent.code}</span>
             </div>
             <span className="font-mono text-[10px] text-on-surface-variant">{meta}</span>
           </div>

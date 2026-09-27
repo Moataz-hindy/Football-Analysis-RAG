@@ -193,12 +193,16 @@ async def get_discussion(discussion_id: str):
         camp = ""
 
         if camps:
-            for c_key in ["camp_a", "camp_b"]:
+            for c_key, c_default in [("camp_a", "Camp A"), ("camp_b", "Camp B")]:
                 c_data = camps.get(c_key, {})
+                c_ids = c_data.get("ids", [])
+                if aid in c_ids:
+                    camp = c_data.get("name", c_default)
+                    break
                 for r_key in ["coach", "fan", "pundit"]:
                     if c_data.get(r_key) == aid:
                         role = r_key
-                        camp = c_data.get("name", c_key)
+                        camp = c_data.get("name", c_default)
                         break
 
         try:
