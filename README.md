@@ -13,11 +13,93 @@ A **multi-agent football intelligence and dialectical deliberation platform**. T
 
 ---
 
+## Visual Architecture Overview
+
+```mermaid
+flowchart TD
+    subgraph KNOWLEDGE ["1. Knowledge Infrastructure"]
+        RAW["Football Web Sources<br/>(80+ tactical articles, IFAB laws)"] --> CLEAN["Text Cleaner & Normaliser"]
+        CLEAN --> CHUNK["1,200-Char Chunking<br/>(200-char overlap)"]
+        CHUNK --> EMBED["1024-D Embeddings Engine"]
+        EMBED --> VDB[("PostgreSQL 16 + pgvector<br/>(IVFFlat cosine index)")]
+        VDB -.->|"graceful fallback"| SQLITE[("Embedded SQLite 3 DB")]
+    end
+
+    subgraph AGENTS ["2. Autonomous Specialist Personas"]
+        VDB -->|"vector retrieval (top-k)"| RAG_TOOL["KnowledgeSearchTool"]
+        WEB_TOOL["WebSearchTool (Tavily)"]
+        CALC_TOOL["CalculatorTool (xG / math)"]
+        
+        P1["Tactical Analyst<br/>(Half-space & Spatial)"]
+        P2["Statistical Analyst<br/>(xG & Empirical Models)"]
+        P3["Performance Analyst<br/>(Fatigue, Sprints & Press)"]
+        P4["Context Analyst<br/>(Historical Precedents)"]
+        P5["Refereeing Analyst<br/>(Law 12 & VAR Protocol)"]
+        P6["Fan Voice<br/>(Terrace Sentiment)"]
+
+        TOOLS["Tool Registry"] --- RAG_TOOL
+        TOOLS --- WEB_TOOL
+        TOOLS --- CALC_TOOL
+
+        P1 & P2 & P3 & P4 & P5 & P6 <-->|"agent loop & tool calls"| TOOLS
+        P1 & P2 & P3 & P4 & P5 & P6 <-->|"fast inference (~1-3s)"| LLM["Cerebras API<br/>(qwen-3.8-27b)"]
+    end
+
+    subgraph ORCHESTRATION ["3. Dialectical Discussion Orchestrator"]
+        GRAPH["NetworkX Passing Graph<br/>(Ring & Chord Topology)"]
+        ROUTER["GraphRouter (Stateless Message Passing)"]
+        ROUTER -->|"route turn messages"| GRAPH
+        
+        ORCH["DiscussionOrchestrator<br/>(Opening Statements + N Rounds)"]
+        ORCH -->|"dispatch turns"| P1 & P2 & P3 & P4 & P5 & P6
+        ORCH -->|"turn-by-turn checkpoint"| DISK[("Disk Storage<br/>outputs/{id}.json")]
+    end
+
+    subgraph ANALYTICS ["4. Intelligence Analytics Engine"]
+        DISK -->|"read transcript"| ENGINE["AnalyticsEngine"]
+        ENGINE --> TASK1["Task 1: Stance Trajectories<br/>[-1.0, +1.0] Numeric Shifts"]
+        ENGINE --> TASK2["Task 2: Pairwise Consensus<br/>A = 1 - D_mean / 2"]
+        ENGINE --> TASK3["Task 3: Counterfactual Causal Ablation<br/>Persuasion Impact (τ)"]
+        ENGINE --> TASK4["Task 4: VADER Sentiment<br/>Distribution Across Rounds"]
+        ENGINE --> TASK5["Task 5: Executive Synthesis<br/>Tactical LLM Narrative"]
+    end
+
+    subgraph PLATFORM ["5. Touchline Intelligence Platform"]
+        API["FastAPI REST Backend (:8000)<br/>(Worker Pool & Deep Queue Depth)"]
+        API <--> DISK
+        API <--> ENGINE
+
+        WEB["Touchline Web App (Vite + React 18)"]
+        WEB <-->|"poll transcript & status"| API
+
+        ARENA["/arena<br/>Live Deliberation Deck"]
+        HISTORY["/history<br/>Deliberation Catalog"]
+        INTEL["/intel<br/>Analytics Dashboard"]
+        DEVOPS["/devops<br/>System Telemetry"]
+
+        WEB --- ARENA & HISTORY & INTEL & DEVOPS
+    end
+
+    classDef core fill:#0b1329,stroke:#0284c7,stroke-width:1.5px,color:#f8fafc;
+    classDef store fill:#1e1b4b,stroke:#818cf8,stroke-width:1.5px,color:#f8fafc;
+    classDef tool fill:#042f2e,stroke:#14b8a6,stroke-width:1.5px,color:#f8fafc;
+    classDef ui fill:#1c1917,stroke:#f59e0b,stroke-width:1.5px,color:#f8fafc;
+
+    class KNOWLEDGE,AGENTS,ORCHESTRATION,ANALYTICS core;
+    class VDB,SQLITE,DISK store;
+    class TOOLS,RAG_TOOL,WEB_TOOL,CALC_TOOL,LLM tool;
+    class PLATFORM,WEB,ARENA,HISTORY,INTEL,DEVOPS ui;
+```
+
+---
+
 ## Table of Contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Week-by-Week Summary](#week-by-week-summary)
+- [Visual Architecture Overview](#visual-architecture-overview)
+- [Dialectical Passing Graph Network](#dialectical-passing-graph-network)
+- [Live Deliberation Streaming Sequence](#live-deliberation-streaming-sequence)
+- [Deliberation Lifecycle State Machine](#deliberation-lifecycle-state-machine)
+- [Causal Counterfactual Ablation Pipeline](#causal-counterfactual-ablation-pipeline)
 - [Touchline Intelligence Platform (Week 5)](#touchline-intelligence-platform-week-5)
 - [Configurable Agent Rosters (2–6 Agents)](#configurable-agent-rosters-26-agents)
 - [Project Structure](#project-structure)
@@ -34,153 +116,154 @@ A **multi-agent football intelligence and dialectical deliberation platform**. T
 
 ---
 
-## Overview
+## Dialectical Passing Graph Network
 
-The platform spans five integrated layers:
+Agents do not broadcast blindly to a shared room. Instead, conversations map dynamically across an interactive tactical pitch using a **NetworkX directed graph topology** designed around football tactical friction points:
 
-```text
-Week 1: Knowledge Infrastructure (PostgreSQL 16 + pgvector / SQLite Fallback)
-         │
-         ▼
-Week 2: Intelligent Persona Agents (6 Specialists, Tool Registry, VADER)
-         │
-         ▼
-Week 3: Multi-Agent Dialectical Deliberation (NetworkX Routing, 2-6 Agents)
-         │
-         ▼
-Week 4: Analytics & Intelligence Layer (Stance, Agreement, Causal Ablation)
-         │
-         ▼
-Week 5: Touchline Intelligence Platform (FastAPI + Vite/React Multi-Page App)
-```
+```mermaid
+flowchart LR
+    subgraph CAMP_A ["Camp A: Thesis & Theory"]
+        TAC["Tactical Analyst<br/>(Formation & Structural Space)"]
+        STAT["Statistical Analyst<br/>(xG & Empirical Models)"]
+        FAN["Fan Voice<br/>(Terrace Emotion & Energy)"]
+    end
 
-The end-to-end deliberation and analytics workflow:
+    subgraph CAMP_B ["Camp B: Reality & Rules"]
+        PERF["Performance Analyst<br/>(Fatigue & Physical Duels)"]
+        REF["Refereeing Analyst<br/>(Law 12 & VAR Strictness)"]
+        CTX["Context Analyst<br/>(Historical Parallels)"]
+    end
 
-```text
-Football Web Sources ──▶ RAG Embeddings (1024-D) ──▶ Persona Agents (2 to 6)
-                                                               │
-                                                               ▼
-Live Arena Stepper ◀── Turn Checkpoints ◀── NetworkX Graph Deliberation
-        │                                                      │
-        ▼                                                      ▼
-Interactive Pitch                                   ┌───────────────────────┐
-Passing Routes                                      │   Analytics Engine    │
-                                                    ├───────────────────────┤
-                                                    │ Stance Trajectories   │
-                                                    │ Consensus Tracking    │
-                                                    │ Causal Influence (τ)  │
-                                                    │ Executive Synthesis   │
-                                                    └───────────┬───────────┘
-                                                                ▼
-                                                    Intelligence Dashboard
-                                                     (/intel & REST API)
+    %% Reciprocal direct rebuttals
+    TAC <-->|"Direct Rebuttal:<br/>Tactical Theory vs On-Pitch Physicality"| PERF
+    STAT <-->|"Empirical Dispute:<br/>xG Model vs Disputed Contact"| REF
+    FAN <-->|"Partisan Clashes:<br/>Fan Passion vs Historical Perspective"| CTX
+
+    %% Intra-camp consultation
+    TAC <-->|"Coordinate Structure"| STAT
+    STAT <-->|"Validate Momentum"| FAN
+    PERF <-->|"Condition Checks"| REF
+    REF <-->|"Precedent Verification"| CTX
+
+    %% Cross-thematic bridges
+    TAC -->|"Bridge"| FAN
+    PERF -->|"Physicality Challenge"| STAT
+
+    classDef campA fill:#082f49,stroke:#38bdf8,stroke-width:1.5px,color:#f0f9ff;
+    classDef campB fill:#2e1065,stroke:#c084fc,stroke-width:1.5px,color:#faf5ff;
+    class TAC,STAT,FAN campA;
+    class PERF,REF,CTX campB;
 ```
 
 ---
 
-## Architecture
+## Live Deliberation Streaming Sequence
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Week 1: Knowledge Layer                            │
-│                                                                             │
-│  Web Sources ──▶ Collector ──▶ Cleaner ──▶ Chunker & Embedder ──▶ Database │
-│  (80+ URLs)     collect.py    clean.py    process_all.py        Postgres/   │
-│                                                                 pgvector    │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ vector search (cosine distance)
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                       Week 2: Agent Layer                                   │
-│                                                                             │
-│  Specialist Personas (YAML-defined)                                        │
-│  ├── LLM Adapter (OpenAI-compatible, Cerebras qwen-3.8-27b)                │
-│  ├── Conversation Memory with sliding-window summarization                  │
-│  ├── RAG Retrieval (KnowledgeSearchTool) & WebSearchTool (Tavily)          │
-│  ├── CalculatorTool for mathematical & metric validation                    │
-│  └── VADER Lexicon Sentiment Scorer                                         │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                     Week 3: Discussion Layer                                │
-│                                                                             │
-│  Discussion Orchestrator (src/discussion/orchestrator.py)                   │
-│  ├── Graph Message Routing (NetworkX ring + chord topology)                │
-│  ├── Multi-Round Discussions (Opening statements + N rounds)                │
-│  ├── Configurable Rosters: 2, 3, 4, 5, or 6 Specialist Agents              │
-│  ├── Turn-by-Turn Checkpointing to outputs/{id}.json                       │
-│  └── In-Flight Memory Tracking for live status inspection                   │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                     Week 4: Analytics Layer                                 │
-│                                                                             │
-│  Analytics Engine (src/analytics/engine.py)                                │
-│  ├── Task 1: Stance Trajectories & Shift Detection (stance.py)              │
-│  ├── Task 2: Pairwise Consensus Agreement (agreement.py)                   │
-│  ├── Task 3: Counterfactual Causal Ablation (causal_influence.py)          │
-│  ├── Task 4: Message Sentiment Distribution (sentiment.py)                  │
-│  ├── Task 5: Pearson Correlation Influence (correlation_influence.py)       │
-│  └── LLM Executive Synthesis & Tactical Narrative (synthesis.py)            │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                  Week 5: Application & Platform Layer                       │
-│                                                                             │
-│  FastAPI Backend (:8000)                                                    │
-│  ├── Multi-Tenant SQLite/PostgreSQL Database (Tenant Profiles & Personas)   │
-│  ├── Discussion Worker Pool with Queue Depth Limiting & Graceful Shutdown   │
-│  ├── Trailing-Comma Middleware & Path Traversal Sanitizers                  │
-│  └── REST Endpoints: /discussions, /analytics, /auth, /profile, /personas   │
-│                                                                             │
-│  Vite + React 18 Multi-Page Frontend (:5173 / :3000 / /app)                 │
-│  ├── Deep-Linkable Routes: /arena, /history, /intel, /devops                │
-│  ├── Real-Time Streaming Transcript with Live-Edge Auto-Follow              │
-│  ├── Interactive Tactical Pitch & Passing Graph Visualizer                  │
-│  ├── Configurable Deliberation Stepper (Rounds & Agents Selector)           │
-│  └── Claude Nocturne Design System (Glassmorphic Dark Mode)                 │
-└─────────────────────────────────────────────────────────────────────────────┘
+The Arena streams ongoing multi-agent debates directly onto the screen **turn-by-turn**, without requiring full-page browser refreshes:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User in Browser
+    participant App as Arena View (/arena)
+    participant API as FastAPI REST API
+    participant Worker as Background Worker Pool
+    participant Orchestrator as Discussion Orchestrator
+    participant LLM as Cerebras API (qwen-3.8-27b)
+    participant Disk as outputs/{id}.json
+
+    User->>App: Choose Topic, Rounds (2-5), Agents (2-6)
+    User->>App: Click "Start Deliberation"
+    App->>API: POST /discussions {"topic": "...", "num_rounds": 2, "num_agents": 2}
+    API->>Worker: Enqueue discussion job (Slot Acquired)
+    API-->>App: HTTP 202 Accepted {"status": "queued", "discussion_id": "disc-xyz"}
+    App->>App: Render active Arena pitch & dialogue stream shell
+    
+    Worker->>Orchestrator: Spawn discussion process
+    Orchestrator->>Disk: Checkpoint initial state {"status": "running", "messages": []}
+    
+    loop Every Turn (Opening + Rounds 1..N)
+        Orchestrator->>LLM: Prompt next agent with routed peer inbox
+        LLM-->>Orchestrator: Return argument & tool calls (1-3s)
+        Orchestrator->>Disk: Atomic write outputs/{id}.json (Turn Appended)
+        
+        App->>API: Poll GET /discussions/{id}/status (Every 2.5s)
+        API-->>App: {"status": "running", "current_round": r}
+        App->>API: GET /discussions/{id} (Live Transcript)
+        API-->>App: {"messages": [m_1, m_2, ..., m_k]}
+        App->>App: Stream new turns onto pitch & scroll dialogue in-place
+    end
+
+    Orchestrator->>Disk: Save final complete transcript {"status": "completed"}
+    App->>API: Poll status -> "completed"
+    App->>App: Deep-link to /arena?id={id} & enable Replay stepper
 ```
 
 ---
 
-## Week-by-Week Summary
+## Deliberation Lifecycle State Machine
 
-### Week 1 — Knowledge Infrastructure
-- **Collected** 80+ football web resources (IFAB Laws of the Game, tactical guides, World Cup match reports).
-- **Cleaned** raw HTML to structured text with boilerplate stripping and character normalisation.
-- **Chunked & embedded** documents (1,200 chars with 200-char overlap) producing 1,024-dimensional vectors.
-- **Ingested** into PostgreSQL 16 + pgvector with cosine similarity indexing.
-- **Evaluated** with retrieval benchmarks (Precision@5, Recall@5, MRR) across curated tactical queries.
+Discussions proceed through bounded states with queue depth buffering and rate-limit backoff clamps:
 
-### Week 2 — Intelligent Agents
-- **6 specialist personas** defined in YAML: Tactical Analyst, Statistical Analyst, Fan Voice, Refereeing Analyst, Performance Analyst, and Historical Context Analyst.
-- **Unified LLM adapter** speaking the OpenAI wire protocol, supporting Cerebras, Groq, OpenRouter, and local endpoints.
-- **Conversation memory** with sliding windows and automatic summarisation.
-- **Tool system**: `KnowledgeSearchTool` (RAG vector database), `CalculatorTool`, and `WebSearchTool` (Tavily).
-- **VADER sentiment** scoring per turn.
+```mermaid
+stateDiagram-v2
+    [*] --> Queued : POST /discussions
+    
+    state Queued {
+        [*] --> InWorkerPool : Worker slot available
+        [*] --> WaitingSlot : Active job in flight (Queue Depth ≤ 4)
+    }
 
-### Week 3 — Multi-Agent Discussion System
-- **NetworkX graph routing** directing messages between opposing and complementary analyst roles.
-- **Multi-round debates** proceeding from initial opening statements through iterative peer critique rounds.
-- **Live checkpointing** saving debate state to disk immediately after each agent turn.
-- **Opinion evolution tracking** recording stance movements and change rationales.
-- **Graceful degradation** enabling offline discussions when vector databases are unavailable.
+    WaitingSlot --> InWorkerPool : Previous job completes
+    Queued --> 503_Rejected : Queue Depth > 4 (Queue Full)
 
-### Week 4 — Analytics & Intelligence Layer
-- **Opinion Trajectories**: Numeric stance scoring `[-1.0, +1.0]` with fast-fail local embedding fallbacks.
-- **Consensus Agreement**: Pairwise discussion agreement score `A = 1 - D_mean / 2`.
-- **Causal Influence Ablation**: Counterfactual exchange ablation calculating each agent's true persuasive power ($\tau$).
-- **Sentiment Profiling**: Distribution of sentiment shifts across debate rounds.
-- **Executive Synthesis**: Automated LLM tactical narrative and peer critique summaries.
-- **Fabrication-Free Honesty**: Unscored or offline items remain honest `null` rather than generating synthetic heuristic data.
+    InWorkerPool --> Running : Orchestrator starts
+    
+    state Running {
+        [*] --> FormulatingOpening : Round 0
+        FormulatingOpening --> CheckpointSaved : Agent turn completes
+        CheckpointSaved --> CrossExamining : Rounds 1..N
+        CrossExamining --> CheckpointSaved : Agent turn completes
+        
+        state RateLimitBackoff {
+            Transient429 --> PacedWait : Clamp max 10s delay
+            PacedWait --> RetryCall : Attempt 1..2
+        }
+        
+        CrossExamining --> RateLimitBackoff : Provider 429
+        RateLimitBackoff --> CrossExamining : Turn recovers
+    }
 
-### Week 5 — Touchline Intelligence Platform
-- **FastAPI REST API**: Asynchronous backend managing discussion worker queues, analytics caching, and platform authentication.
-- **Vite + React 18 Frontend**: Futuristic glassmorphic tactical interface built on Claude Nocturne design principles.
-- **Multi-Page HTML Architecture**: Deep-linkable independent HTML entry points (`/arena`, `/history`, `/intel`, `/devops`).
-- **Live Stream Deliberation**: Real-time transcript streaming onto the pitch and dialogue stream without full-page reloads.
-- **Configurable Agent Roster**: On-demand selection of 2 to 6 agents with dynamic strongly-connected topologies.
-- **Multi-Tenant Scouting Profiles**: Role-based profiles (Scout, Head Coach, Tactical Analyst) with custom persona managers.
+    Running --> Completed : All rounds finished
+    Running --> Failed : Permanent exception (Partial saved)
+
+    Completed --> [*] : Persisted to outputs/{id}.json
+    Failed --> [*] : Surface error to UI with retry
+```
+
+---
+
+## Causal Counterfactual Ablation Pipeline
+
+Rather than relying purely on correlation, the platform calculates true **causal influence** ($\tau$) by systematically evaluating peer argument exchanges:
+
+```mermaid
+flowchart LR
+    A["Completed Transcript<br/>outputs/{id}.json"] --> B["Extract Real Candidate Exchanges<br/>(Sender ➔ Recipient Dialogues)"]
+    B --> C["Establish Baseline Opinion Shift<br/>Δ_observed = Stance_r - Stance_r-1"]
+    
+    C --> D["Counterfactual Intervention<br/>do(remove message m)"]
+    D --> E["Contrastive Evaluation<br/>Estimate Counterfactual Shift Δ_cf"]
+    
+    E --> F["Compute Causal Persuasion Score<br/>τ = Δ_observed - Δ_cf"]
+    F --> G["Aggregate Agent Persuasion Index<br/>Score across all participated exchanges"]
+    G --> H["Ranked Causal Influencer<br/>(Rendered in /intel)"]
+
+    classDef step fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
+    classDef score fill:#1e1b4b,stroke:#a855f7,stroke-width:1.5px,color:#f8fafc;
+    class A,B,C,D,E step;
+    class F,G,H score;
+```
 
 ---
 
@@ -482,7 +565,7 @@ Observed turn latencies recorded across benchmark debate sessions:
 - **Frontend**: React 18, Vite, Tailwind CSS, Phosphor Icons, Marked.js
 - **Database**: PostgreSQL 16 + pgvector (Semantic Embeddings), SQLite 3 (Fallback Platform DB)
 - **Analytics**: Sentence-Transformers (`all-MiniLM-L6-v2`), NumPy, SciPy, VADER
-- **Visualization**: Matplotlib (Agg headless engine), HTML5 Canvas Tactical Pitch
+- **Visualization**: Matplotlib (Agg headless engine), HTML5 Canvas Tactical Pitch, Mermaid.js
 
 ---
 
