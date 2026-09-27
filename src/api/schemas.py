@@ -1,7 +1,8 @@
 """Pydantic v2 schemas for the Football Analysis Platform API."""
 
+import re
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Health Check ──
@@ -28,6 +29,7 @@ class DiscussionSummary(BaseModel):
     num_rounds: int
     num_messages: int
     timestamp: str = ""
+    status: str = "unknown"
 
 
 class DiscussionListResponse(BaseModel):
@@ -67,19 +69,35 @@ class DiscussionDetailResponse(BaseModel):
 # ── Start Discussion ──
 class StartDiscussionRequest(BaseModel):
     topic: str = Field(min_length=1)
-    num_rounds: int = Field(default=3, ge=2, le=10)
-    discussion_id: str | None = Field(
-        default=None,
-        pattern=r"^[A-Za-z0-9_-]+$",
+    num_rounds: int = Field(default=3, ge=1, le=10)
+    discussion_id: str | None = Field(default=None, description="Discussion ID. Spaces are automatically sanitized.")
+    num_agents: int = Field(
+        default=6,
+        ge=2,
+        le=6,
+        description="Number of specialist agents in the deliberation (2-6, default 6).",
     )
     dynamic_personas: bool = Field(
-        default=True,
-        description="Whether to generate dynamic 3v3 polarized personas via LLM.",
+        default=False,
+        description="Whether to generate dynamic 3v3 polarized personas via LLM (defaults to the 6 specialist system personas).",
     )
     force_regenerate: bool = Field(
         default=False,
         description="Force regeneration of dynamic personas if cached.",
     )
+
+    @field_validator("discussion_id", mode="before")
+    @classmethod
+    def sanitize_discussion_id(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            # Automatically convert spaces and invalid chars to hyphens
+            # so inputs like 'Argentina winning players-F2FG' become 'Argentina-winning-players-F2FG'
+            cleaned = re.sub(r"[^A-Za-z0-9_-]+", "-", v).strip("-")
+            return cleaned or None
+        return v
 
 
 

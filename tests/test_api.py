@@ -197,3 +197,56 @@ def test_get_discussion_synthesis(client: TestClient, monkeypatch):
     assert "executive_summary" in data
     assert "agent_evaluations" in data
 
+
+def test_running_discussion_is_retrievable_immediately(client: TestClient, monkeypatch):
+    """A newly started discussion is 200 OK before its first checkpoint lands."""
+    import threading
+    import time
+
+    from src.api.services import discussion_service as discussion_service_module
+
+    release = threading.Event()
+
+    def stalled_run(discussion_id, request):
+        """Hold the worker inside the run so the discussion stays live."""
+        release.wait(timeout=60)
+        return 1
+
+    monkeypatch.setattr(discussion_service_module, "_execute_discussion", stalled_run)
+
+    try:
+        start = client.post(
+            "/discussions",
+            json={"topic": "In-flight visibility check", "num_rounds": 3},
+        )
+        assert start.status_code == 202
+        discussion_id = start.json()["discussion_id"]
+
+        detail = client.get(f"/discussions/{discussion_id}")
+        assert detail.status_code == 200
+        body = detail.json()
+        assert body["discussion_id"] == discussion_id
+        assert body["topic"] == "In-flight visibility check"
+        assert body["messages"] == []
+        assert len(body["agents"]) == 6
+
+        status = client.get(f"/discussions/{discussion_id}/status")
+        assert status.status_code == 200
+        assert status.json()["status"] in {"queued", "running"}
+        assert status.json()["total_rounds"] == 3
+
+        listed = client.get("/discussions").json()["discussions"]
+        assert discussion_id in [item["discussion_id"] for item in listed]
+
+        unknown = client.get("/discussions/nobody-started-me-123")
+        assert unknown.status_code == 404
+    finally:
+        release.set()
+
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        tracked = discussion_service_module.get_runtime_status(discussion_id)
+        if tracked is not None and tracked.status == "failed":
+            break
+        time.sleep(0.05)
+

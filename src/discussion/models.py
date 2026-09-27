@@ -50,8 +50,8 @@ class DiscussionState:
         if not self.topic.strip():
             raise ValueError("Discussion topic cannot be empty.")
 
-        if self.total_rounds < 3:
-            raise ValueError("Total rounds must be at least 3.")
+        if self.total_rounds < 1:
+            raise ValueError("Total rounds must be at least 1.")
 
         if len(self.agent_ids) < 2:
             raise ValueError("At least two agents are required for a discussion.")

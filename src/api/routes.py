@@ -111,6 +111,7 @@ async def get_discussions():
                 num_rounds=int(item.get("num_rounds", 0)),
                 num_messages=int(item.get("num_messages", 0)),
                 timestamp=str(item.get("timestamp", "")),
+                status=str(item.get("status", "unknown")),
             )
             for item in raw_summaries
         ]

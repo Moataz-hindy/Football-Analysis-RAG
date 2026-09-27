@@ -36,6 +36,7 @@ from src.agent.memory import ConversationMemory
 from src.agent.persona_loader import load_persona
 from src.agent.retrieval import RAGRetrieval
 from src.agent.tool_registery import ToolRegistry
+from src.discussion.graph import DEFAULT_AGENT_ROSTER, build_discussion_graph, select_agent_roster
 from src.discussion.orchestrator import DiscussionOrchestrator, DiscussionRunError
 from src.discussion.persistence import (
     load_discussion_by_id,
@@ -66,6 +67,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=3,
         help="Number of discussion rounds (minimum 3; default 3).",
+    )
+    parser.add_argument(
+        "--agents",
+        type=int,
+        default=6,
+        help="Number of specialist agents in the deliberation (2-6; default 6).",
     )
     parser.add_argument(
         "--discussion-id",
@@ -109,11 +116,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     project_root = Path(__file__).resolve().parents[2]
-    load_dotenv(project_root / ".env")
+    load_dotenv(project_root / ".env", override=True)
 
     discussion_id = args.discussion_id or str(uuid4())
-
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", discussion_id):
+    discussion_id = re.sub(r"[^A-Za-z0-9_-]+", "-", discussion_id.strip()).strip("-")
+    if not discussion_id or not re.fullmatch(r"[A-Za-z0-9_-]+", discussion_id):
         raise ValueError("Use only letters, digits, underscores and hyphens in discussion IDs")
     output_file = Path(args.output_dir) / f"{discussion_id}.json"
     if output_file.exists() and not args.overwrite:
@@ -161,7 +168,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             agents[agent_id] = Agent(config, max_tool_rounds=3)
     else:
-        router = GraphRouter()
+        roster = select_agent_roster(getattr(args, "agents", 6))
+        if len(roster) == len(DEFAULT_AGENT_ROSTER):
+            # The full roster keeps the curated six-agent debate graph.
+            router = GraphRouter()
+        else:
+            router = GraphRouter(graph=build_discussion_graph(list(roster)))
         for agent_id in sorted(router.graph.graph.nodes):
             persona_file = f"{agent_id}.yaml"
             persona = load_persona(Path(args.personas_dir) / persona_file)

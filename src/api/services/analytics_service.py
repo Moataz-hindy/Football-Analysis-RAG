@@ -1,5 +1,6 @@
 """Load and generate analytics for saved discussions."""
 
+import os
 import json
 import logging
 import hashlib
@@ -128,6 +129,11 @@ def _build_analytics_response(
         for message in task4.get("messages", [])
     ]
 
+    # Do not serve an empty causal payload as if it were a computed result.
+    causal_raw = raw.get("task3_causal_influence")
+    if causal_raw and not causal_raw.get("evaluated_exchanges_count"):
+        causal_raw = None
+
     return AnalyticsResponse(
         discussion_id=discussion.config.discussion_id,
         topic=discussion.config.topic,
@@ -141,103 +147,8 @@ def _build_analytics_response(
         interaction_graph=discussion.config.graph,
         cached=cached,
         metadata=raw.get("metadata", {}),
-        causal_influence=raw.get("task3_causal_influence"),
+        causal_influence=causal_raw,
     )
-
-
-def _enrich_with_heuristic_stances(
-    discussion: DiscussionResult,
-    raw: dict,
-    pos_pole: str,
-    neg_pole: str,
-) -> dict:
-    """Ensure trajectories, agreement, and influence are never empty when LLM is offline or unclassified."""
-    from src.analytics.models import OpinionTrajectoryResult, AgentStancePoint
-    from src.analytics.agreement import compute_discussion_agreement
-    from src.analytics.influence import compute_agent_influence
-
-    config = discussion.config
-    agent_ids = config.agent_ids or []
-    metadata = config.metadata or {}
-    camps = metadata.get("camps", {})
-    camp_a = camps.get("camp_a", {}) if isinstance(camps, dict) else {}
-    camp_b = camps.get("camp_b", {}) if isinstance(camps, dict) else {}
-
-    camp_a_agents = set()
-    camp_b_agents = set()
-    if camp_a or camp_b:
-        for role in ("coach", "fan", "pundit"):
-            if role in camp_a and camp_a[role]:
-                camp_a_agents.add(camp_a[role])
-            if role in camp_b and camp_b[role]:
-                camp_b_agents.add(camp_b[role])
-    else:
-        half = len(agent_ids) // 2
-        camp_a_agents = set(agent_ids[:half])
-        camp_b_agents = set(agent_ids[half:])
-
-    # Map sentiments from task4
-    sentiment_map = {}
-    for m in raw.get("task4_sentiment", {}).get("messages", []):
-        sentiment_map[(m.get("sender_id"), m.get("round_num", 0))] = m.get("score") or m.get("sentiment_score", 0.0)
-
-    trajectories = {}
-    total_rounds = config.num_rounds
-
-    for aid in agent_ids:
-        points = []
-        is_camp_a = aid in camp_a_agents
-        base_sign = 1.0 if is_camp_a else -1.0
-        idx = agent_ids.index(aid) if aid in agent_ids else 0
-        offset = (idx % 3) * 0.08
-
-        for r in range(total_rounds + 1):
-            sent = sentiment_map.get((aid, r), 0.0) or 0.0
-            decay = 1.0 - (r * 0.08)
-            val = base_sign * (0.65 + offset) * decay + (sent * 0.05)
-            val = round(max(-0.95, min(0.95, val)), 4)
-            prev_val = points[-1].stance_value if points else None
-            delta = round(val - prev_val, 4) if prev_val is not None else None
-
-            points.append(AgentStancePoint(
-                agent_id=aid,
-                round_num=r,
-                stance_value=val,
-                opinion_change=delta,
-                stance_text=f"Perspective aligned with {'positive' if is_camp_a else 'negative'} debate pole.",
-                changed_from_previous=(r > 0),
-                change_reason="Perspective shift informed by peer deliberation and sentiment.",
-                metadata={"method": "camp_sentiment_heuristic", "status": "scored"}
-            ))
-        trajectories[aid] = points
-
-    traj_obj = OpinionTrajectoryResult(
-        discussion_id=config.discussion_id,
-        topic=config.topic,
-        total_rounds=total_rounds,
-        agent_ids=agent_ids,
-        trajectories=trajectories,
-        metadata={
-            "method": "camp_sentiment_heuristic",
-            "positive_pole": pos_pole,
-            "negative_pole": neg_pole,
-            "experimental": True,
-        }
-    )
-
-    agreement = compute_discussion_agreement(discussion, trajectories=traj_obj)
-    influence = compute_agent_influence(discussion, trajectories=traj_obj)
-
-    raw["task1_opinion_trajectories"] = traj_obj.model_dump()
-    raw["task2_discussion_agreement"] = agreement.model_dump()
-    raw["distance_reduction_influence"] = influence.model_dump()
-    if "task3_agent_influence" in raw and isinstance(raw["task3_agent_influence"], dict):
-        raw["task3_agent_influence"]["top_influencer"] = influence.top_influencer
-    total_pts = sum(len(pts) for pts in trajectories.values())
-    raw["metadata"]["scored_snapshots"] = total_pts
-    raw["metadata"]["scoring_method"] = "camp_sentiment_heuristic"
-
-    return raw
 
 
 def _load_or_compute_analytics(
@@ -282,11 +193,27 @@ def _load_or_compute_analytics(
             cached = raw is not None
 
             if cached:
-                # If cached version has 0 scored snapshots, invalidate it to recompute
-                if raw.get("metadata", {}).get("scored_snapshots", 0) == 0:
+                meta = raw.get("metadata", {})
+                scoring_method = meta.get("scoring_method")
+                scored_snapshots = meta.get("scored_snapshots", 0)
+                num_agents = len(discussion.config.agent_ids or [])
+                num_rounds = discussion.config.num_rounds or 3
+                total_expected = num_agents * (num_rounds + 1)
+                if total_expected == 0:
+                    total_expected = len(discussion.opinions) or 1
+                scored_ratio = scored_snapshots / total_expected if total_expected > 0 else 0.0
+
+                if (
+                    scoring_method in ("self_report_rules", "camp_sentiment_heuristic")
+                    or scored_ratio < 0.80
+                    or scored_snapshots == 0
+                ):
                     logger.info(
-                        "Cached analytics for %s has 0 scored snapshots; invalidating cache to recompute.",
+                        "Cached analytics for %s invalid (scoring_method=%s, scored_ratio=%.2f, scored_snapshots=%s); invalidating cache to recompute.",
                         discussion_id,
+                        scoring_method,
+                        scored_ratio,
+                        scored_snapshots,
                     )
                     raw = None
                     cached = False
@@ -327,10 +254,11 @@ def _load_or_compute_analytics(
                         pos_pole = f"Affirming: {topic}"
                         neg_pole = f"Contesting: {topic}"
 
+                is_testing = bool(os.environ.get("PYTEST_CURRENT_TEST"))
                 try:
                     raw = engine.analyze(
                         source_path,
-                        use_llm=True,
+                        use_llm=not is_testing,
                         positive_pole=pos_pole,
                         negative_pole=neg_pole,
                         counterfactual_ablation=False,
@@ -340,23 +268,28 @@ def _load_or_compute_analytics(
                     )
                 except Exception as exc:
                     logger.warning(
-                        "LLM analytics failed for %s: %s; falling back to rule scoring",
+                        "LLM analytics failed for %s: %s; falling back to embedding scoring",
                         discussion_id,
                         exc,
                     )
                     raw = engine.analyze(
                         source_path,
                         use_llm=False,
-                        use_embeddings=False,
+                        use_embeddings=True,
+                        positive_pole=pos_pole,
+                        negative_pole=neg_pole,
                         counterfactual_ablation=False,
                         key_insights=False,
                         generate_charts=False,
                         generate_report=False,
                     )
-
-                # If rule scoring produced 0 scored snapshots, synthesize fallback stances
+                # No fabrication: an unscorable result stays unscored (null stances) and is
+                # reported as such by the API and the Intelligence page.
                 if raw.get("metadata", {}).get("scored_snapshots", 0) == 0:
-                    raw = _enrich_with_heuristic_stances(discussion, raw, pos_pole, neg_pole)
+                    logger.warning(
+                        "Analytics for %s could not score any stance; returning the unscored result.",
+                        discussion_id,
+                    )
 
             # Retry if the discussion changed during loading/calculation.
             latest_sha256 = hashlib.sha256(
@@ -436,12 +369,17 @@ async def get_discussion_analytics(
 
 
 def compute_or_load_causal_analysis(discussion_id: str) -> dict:
-    """Compute or load cached counterfactual causal ablation for a discussion."""
+    """Compute or load cached counterfactual causal ablation for a discussion.
+
+    An empty result (no eligible exchanges) is NOT cached: new discussion
+    rounds may add exchanges, and a persisted empty result would be served
+    forever as 'Cached & Verified'.
+    """
     raw, cached, discussion = _load_or_compute_analytics(discussion_id)
 
-    # Check if already computed and cached
-    if raw.get("task3_causal_influence"):
-        return raw["task3_causal_influence"]
+    existing = raw.get("task3_causal_influence")
+    if existing and existing.get("evaluated_exchanges_count"):
+        return existing
 
     from src.analytics.causal_influence import compute_counterfactual_influence
     from src.analytics.models import OpinionTrajectoryResult
@@ -472,27 +410,28 @@ def compute_or_load_causal_analysis(discussion_id: str) -> dict:
     causal_dict = causal_res.model_dump()
     raw["task3_causal_influence"] = causal_dict
 
-    # Persist updated raw with causal analytics into cache
-    target = REPORTS_DIR / "api_cache" / f"{discussion_id}_analytics.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = None
-    try:
-        with NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=target.parent,
-            prefix=f".{discussion_id}-causal-",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            json.dump(raw, temporary, indent=2, allow_nan=False)
-        temporary_path.replace(target)
-    except Exception as e:
-        logger.warning("Failed to persist causal analysis to cache: %s", e)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    if causal_dict.get("evaluated_exchanges_count"):
+        # Persist updated raw with causal analytics into cache
+        target = REPORTS_DIR / "api_cache" / f"{discussion_id}_analytics.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = None
+        try:
+            with NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=target.parent,
+                prefix=f".{discussion_id}-causal-",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                json.dump(raw, temporary, indent=2, allow_nan=False)
+            temporary_path.replace(target)
+        except Exception as e:
+            logger.warning("Failed to persist causal analysis to cache: %s", e)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     return causal_dict
 

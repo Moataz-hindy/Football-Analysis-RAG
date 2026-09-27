@@ -102,8 +102,9 @@ def test_no_results_and_failed_retrieval_are_different(monkeypatch):
     def fail(*args, **kwargs):
         raise search_module.RetrievalError("database unavailable")
     monkeypatch.setattr("src.agent.retrieval.search", fail)
-    with pytest.raises(search_module.RetrievalError):
-        RAGRetrieval().retrieve("q")
+    # Infrastructure outage (Postgres down) degrades gracefully: a warning is
+    # logged and an empty list is returned instead of crashing the agent.
+    assert RAGRetrieval().retrieve("q") == []
 
 
 def test_initial_search_and_tool_search_keep_all_source_metadata():

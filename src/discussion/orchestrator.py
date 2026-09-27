@@ -1,8 +1,8 @@
 """Coordinates the agents participating in a discussion."""
 
+import time
 from dataclasses import asdict
 from typing import Callable
-
 from src.agent.agent import Agent
 from src.discussion.models import DiscussionMessage, DiscussionState
 from src.discussion.router import GraphRouter
@@ -89,6 +89,35 @@ class DiscussionOrchestrator:
                 state=state,
             ) from error
 
+    def _run_agent_with_retry(
+        self,
+        agent_id: str,
+        task: str,
+        state: DiscussionState,
+        received_messages: list[dict[str, str]] | None = None,
+        attempts: int = 3,
+        backoff_seconds: float = 30.0,
+    ) -> AgentResponse:
+        """Retry a failed agent turn; one transient provider outage must not
+        abort a multi-minute discussion run."""
+        for attempt in range(attempts):
+            try:
+                return self._run_agent(
+                    agent_id=agent_id, task=task, state=state,
+                    received_messages=received_messages,
+                )
+            except DiscussionRunError:
+                if attempt == attempts - 1:
+                    raise
+                wait = backoff_seconds * (attempt + 1)
+                print(
+                    f"  !! Turn failed for {agent_id} "
+                    f"(provider error); retrying in {wait:.0f}s "
+                    f"({attempt + 1}/{attempts - 1})...",
+                    flush=True,
+                )
+                time.sleep(wait)
+
 
 
 
@@ -113,6 +142,13 @@ class DiscussionOrchestrator:
             **({"discussion_id": discussion_id} if discussion_id else {}),
         )
 
+        # Persist the freshly created run immediately, before the first agent
+        # turn. This makes the discussion retrievable (status "running", empty
+        # message list) for the whole duration of the first LLM call instead of
+        # only after the first agent finishes.
+        if self.checkpoint:
+            self.checkpoint(state)
+
         for agent_id in state.agent_ids:
             print(f"  -> Initial opinion: {agent_id}...", flush=True)
             task = (
@@ -129,7 +165,7 @@ class DiscussionOrchestrator:
                 "SOURCES USED: Identify the sources you relied on."
             )
 
-            response = self._run_agent(
+            response = self._run_agent_with_retry(
                 agent_id=agent_id,
                 task=task,
                 state=state,
@@ -150,7 +186,7 @@ class DiscussionOrchestrator:
             state.record_and_queue(message)
             if self.checkpoint:
                 self.checkpoint(state)
-
+            time.sleep(1.0)
         return state
 
     def run(
@@ -226,7 +262,7 @@ class DiscussionOrchestrator:
                     "SOURCES USED: Identify the sources you relied on."
                 )
 
-                response = self._run_agent(
+                response = self._run_agent_with_retry(
                     agent_id=agent_id,
                     task=task,
                     state=state,
@@ -248,5 +284,5 @@ class DiscussionOrchestrator:
                 state.record_and_queue(message)
                 if self.checkpoint:
                     self.checkpoint(state)
-
+                time.sleep(1.0)
         return state

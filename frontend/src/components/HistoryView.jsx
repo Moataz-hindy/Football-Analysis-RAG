@@ -58,11 +58,14 @@ export default function HistoryView({ savedDiscussions, setSavedDiscussions, loa
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
-            {savedDiscussions.map((disc, idx) => (
+            {savedDiscussions.map((disc, idx) => {
+              const isFailed = disc.num_messages === 0 || disc.status === 'failed' || disc.has_errors;
+              return (
               <div
                 key={disc.discussion_id || idx}
                 style={{ animationDelay: `${Math.min(idx, 10) * 50}ms` }}
                 onClick={() => {
+                  if (isFailed) return;
                   loadDiscussion(disc.discussion_id);
                   setActiveTab('deliberation');
                 }}
@@ -77,28 +80,34 @@ export default function HistoryView({ savedDiscussions, setSavedDiscussions, loa
                       {disc.topic || 'Untitled Tactical Debate'}
                     </h4>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-label-sm text-label-sm font-bold uppercase flex-shrink-0">
-                    LOAD
-                  </span>
+                  {isFailed ? (
+                    <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 font-label-sm text-label-sm font-bold uppercase flex-shrink-0">
+                      FAILED / 0 MSGS
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-label-sm text-label-sm font-bold uppercase flex-shrink-0">
+                      LOAD
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-space-xs bg-surface-container-lowest/60 p-space-xs rounded-lg text-center">
                   <div className="flex flex-col">
                     <span className="font-label-sm text-label-sm text-on-surface-variant">AGENTS</span>
                     <span className="font-label-md text-label-md text-primary font-semibold">
-                      {disc.num_agents || 6}
+                      {disc.num_agents ?? 6}
                     </span>
                   </div>
                   <div className="flex flex-col">
                     <span className="font-label-sm text-label-sm text-on-surface-variant">ROUNDS</span>
                     <span className="font-label-md text-label-md text-secondary font-semibold">
-                      {disc.num_rounds || 3}
+                      {disc.num_rounds ?? 3}
                     </span>
                   </div>
                   <div className="flex flex-col">
                     <span className="font-label-sm text-label-sm text-on-surface-variant">MSGS</span>
                     <span className="font-label-md text-label-md text-on-surface font-semibold">
-                      {disc.num_messages || 18}
+                      {disc.num_messages ?? 0}
                     </span>
                   </div>
                 </div>
@@ -107,12 +116,36 @@ export default function HistoryView({ savedDiscussions, setSavedDiscussions, loa
                   <span className="font-label-sm text-label-sm">
                     {disc.timestamp ? new Date(disc.timestamp).toLocaleString() : 'Recent Debate'}
                   </span>
-                  <span className="font-label-sm text-label-sm text-primary group-hover:translate-x-0.5 transition-transform flex items-center gap-1 font-semibold">
-                    Replay <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                  </span>
+                  {isFailed ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fetch('/discussions', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ topic: disc.topic, num_rounds: disc.num_rounds ?? 3 }),
+                        })
+                          .then((r) => {
+                            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                            return fetch('/discussions');
+                          })
+                          .then((res) => res.json())
+                          .then((d) => setSavedDiscussions(d.discussions || []))
+                          .catch(console.error);
+                      }}
+                      className="font-label-sm text-label-sm text-amber-400 hover:text-amber-300 uppercase font-bold flex items-center gap-1 cursor-pointer group-hover:translate-x-0.5 transition-transform"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">refresh</span> Retry Topic
+                    </button>
+                  ) : (
+                    <span className="font-label-sm text-label-sm text-primary group-hover:translate-x-0.5 transition-transform flex items-center gap-1 font-semibold">
+                      Replay <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                    </span>
+                  )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

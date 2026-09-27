@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import AdvisorPanel from './components/AdvisorPanel';
-import useDiscussionAdvisor from './hooks/useDiscussionAdvisor';
+import LandingPage from './components/LandingPage';
+import MarkdownPreview from './components/MarkdownPreview';
+import AgentCommunicationPitch from './components/AgentCommunicationPitch';
+import AuthModal from './components/AuthModal';
+import OnboardingModal from './components/OnboardingModal';
+import ProfileModal from './components/ProfileModal';
+import PersonaManagerModal from './components/PersonaManagerModal';
+// Agent order the 2-6 agent presets draw from; mirrors the backend roster.
+const AGENT_ROSTER = [
+  'tactical_analyst',
+  'statistical_analyst',
+  'performance_analyst',
+  'context_analyst',
+  'refereeing_analyst',
+  'fan_analyst',
+];
 
 // Specialist agent registry
 const AGENTS = {
@@ -47,6 +61,13 @@ const AGENTS = {
     color: 'var(--color-neutral-500)',
   },
 };
+
+// Agents that take part in a run started with the selected count.
+function rosterAgents(numAgents) {
+  return AGENT_ROSTER.slice(0, numAgents)
+    .map((id) => ({ ...AGENTS[id], agent_id: id }))
+    .filter((agent) => agent.id);
+}
 
 function getAgentInfo(id, meta = null, allAgents = []) {
   if (!id) {
@@ -163,14 +184,66 @@ function getAgentInfo(id, meta = null, allAgents = []) {
 // SVG math helpers for trajectories
 const X = (i) => 40 + i * (580 / 3);
 const Y = (v) => 130 - v * 110;
-const smoothPath = (pts) =>
-  pts
-    .map((v, i) =>
-      i === 0
-        ? `M${X(0)},${Y(v)}`
-        : `C${(X(i - 1) + X(i)) / 2},${Y(pts[i - 1])} ${(X(i - 1) + X(i)) / 2},${Y(v)} ${X(i)},${Y(v)}`
-    )
+// Skip null (unclassified) stance points; draw only measured segments.
+const smoothPath = (pts) => {
+  const measured = pts
+    .map((v, i) => ({ v, i }))
+    .filter(({ v }) => v != null);
+  return measured
+    .map(({ v, i }, k) => {
+      if (k === 0) return `M${X(i)},${Y(v)}`;
+      const prev = measured[k - 1];
+      const mx = (X(prev.i) + X(i)) / 2;
+      return `C${mx},${Y(prev.v)} ${mx},${Y(v)} ${X(i)},${Y(v)}`;
+    })
     .join(' ');
+};
+
+// ── Multi-page URL routing ───────────────────────────────────────────────────
+// Every top-level view is a real page: /, /arena, /history, /intel, /devops.
+// FastAPI serves the matching built HTML document (arena.html, …) for those
+// paths and mounts the bundle at /app, so deep links survive a hard refresh.
+const PAGE_TAB_SLUGS = ['arena', 'history', 'intel', 'devops'];
+
+// Extra slugs accepted in the URL, e.g. /intelligence or /deliberation.
+const TAB_SLUG_ALIASES = {
+  index: 'landing',
+  home: 'landing',
+  deliberation: 'arena',
+  intelligence: 'intel',
+  analytics: 'intel',
+};
+
+/** Mount prefix the app is currently served under ('/app' or ''). */
+function routeBasePath() {
+  const path = window.location.pathname || '/';
+  return path === '/app' || path.startsWith('/app/') ? '/app' : '';
+}
+
+/** Map a URL pathname onto one of the five page tabs (default: landing). */
+function tabFromPathname(pathname) {
+  const segments = String(pathname || '/').toLowerCase().split('/').filter(Boolean);
+  const leaf = (segments[0] === 'app' ? segments[1] : segments[0]) || '';
+  const slug = leaf.replace(/\.html$/, '');
+  if (!slug) return 'landing';
+  const resolved = TAB_SLUG_ALIASES[slug] || slug;
+  return PAGE_TAB_SLUGS.includes(resolved) ? resolved : 'landing';
+}
+
+/** Canonical URL path for a tab, honouring the active mount prefix. */
+function pathForTab(tabId) {
+  const base = routeBasePath();
+  return tabId === 'landing' ? `${base}/` : `${base}/${tabId}`;
+}
+
+/** Query parameters carried by the current URL. */
+function currentQueryParams() {
+  const params = {};
+  new URLSearchParams(window.location.search).forEach((value, key) => {
+    params[key] = value;
+  });
+  return params;
+}
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(() => {
@@ -190,15 +263,51 @@ export default function App() {
     }
   });
 
+  // Multi-Tenant Platform & Persona State (Strict Landing-First Auth Gating)
+  const [token, setToken] = useState(() => {
+    try {
+      return localStorage.getItem('touchline_token') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+
   const [tab, setTab] = useState(() => {
     try {
+      const storedToken = localStorage.getItem('touchline_token');
+      if (!storedToken) return 'landing';
       const params = new URLSearchParams(window.location.search);
       if (params.get('admin') === 'true' || params.get('admin') === '1') {
         return 'devops';
       }
-    } catch (_) {}
-    return 'arena';
+      // Deep links such as /history or /arena decide the initial page.
+      return tabFromPathname(window.location.pathname);
+    } catch (_) {
+      return 'landing';
+    }
   });
+
+  const isAuthenticated = Boolean(user && token);
+  const [activePassEvent, setActivePassEvent] = useState(null);
+
+  // Client-side navigation: keeps the URL bar, the History API and `tab` in sync.
+  const navigateTo = (tabId, queryParams = null) => {
+    const params = new URLSearchParams();
+    if (queryParams) {
+      Object.entries(queryParams).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        params.set(key, String(value));
+      });
+    }
+    const search = params.toString();
+    const url = `${pathForTab(tabId)}${search ? `?${search}` : ''}`;
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (url !== current) window.history.pushState({ tab: tabId }, '', url);
+    setTab(tabId);
+  };
+
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -206,6 +315,143 @@ export default function App() {
   const [hoverAgent, setHoverAgent] = useState(null);
   const [copied, setCopied] = useState(false);
   const [selectedRounds, setSelectedRounds] = useState(3);
+
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login');
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [personaManagerModalOpen, setPersonaManagerModalOpen] = useState(false);
+  const [selectedAgentCount, setSelectedAgentCount] = useState(6);
+
+  // Redirect to landing page whenever not authenticated (and normalise the URL)
+  useEffect(() => {
+    if (token) return;
+    if (tab === 'landing' && window.location.pathname === pathForTab('landing')) return;
+    navigateTo('landing');
+  }, [token, tab]);
+
+  // Session Restoration from touchline_token
+  useEffect(() => {
+    const fetchMe = async () => {
+      const activeTok = token || localStorage.getItem('touchline_token');
+      if (!activeTok) {
+        setUser(null);
+        setProfile(null);
+        return;
+      }
+      try {
+        const res = await fetch('/auth/me', {
+          headers: { Authorization: `Bearer ${activeTok}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user);
+          setProfile(data.profile);
+        } else {
+          localStorage.removeItem('touchline_token');
+          setToken(null);
+          setUser(null);
+          setProfile(null);
+          navigateTo('landing');
+        }
+      } catch (err) {
+        console.error('Session restoration notice:', err);
+      }
+    };
+    fetchMe();
+  }, [token]);
+
+  // Instant Demo Login (Marwan - Scout Profile)
+  const handleDemoLogin = async () => {
+    try {
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'marwan@football.ai', password: 'password123' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('touchline_token', data.token);
+        setToken(data.token);
+        setUser(data.user);
+        setProfile(data.profile);
+        navigateTo('arena');
+        return;
+      }
+    } catch (err) {
+      console.warn('Demo login API fallback:', err);
+    }
+    // Fallback if backend auth service is offline or in mock
+    const fallbackToken = 'demo-session-token-marwan';
+    localStorage.setItem('touchline_token', fallbackToken);
+    setToken(fallbackToken);
+    setUser({ id: 'usr-demo-marwan', email: 'marwan@football.ai', display_name: 'Marwan' });
+    setProfile({
+      id: 'prof-demo-marwan',
+      display_name: 'Marwan',
+      profile_type: 'scout',
+      football_focus: 'Player Recruitment & Positional Profiling',
+      experience_level: 'Professional',
+      preferred_analysis_style: 'Statistical & Quantitative',
+      preferred_report_type: 'Scout Report',
+      favorite_teams: ['Argentina', 'Manchester City', 'Arsenal'],
+      favorite_competitions: ['FIFA World Cup', 'UEFA Champions League'],
+    });
+    navigateTo('arena');
+  };
+
+  const handleLogout = async () => {
+    try {
+      if (token) {
+        await fetch('/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch (_) {}
+    localStorage.removeItem('touchline_token');
+    setToken(null);
+    setUser(null);
+    setProfile(null);
+    setProfileModalOpen(false);
+    navigateTo('landing');
+  };
+
+  // On-Demand Tactical Pass Trigger helper for step navigation
+  const triggerPassForCursor = (nextCursor, msgsArray) => {
+    const list = msgsArray || currentDiscussion?.messages || [];
+    if (nextCursor <= 0 || !list || list.length === 0) {
+      setActivePassEvent(null);
+      return;
+    }
+    const currentMsg = list[nextCursor - 1];
+    if (!currentMsg) return;
+
+    let fromId = null;
+    let toId = null;
+
+    if (Array.isArray(currentMsg.recipient_ids) && currentMsg.recipient_ids.length > 0) {
+      fromId = currentMsg.sender_id;
+      toId = currentMsg.recipient_ids[0];
+    } else if (nextCursor > 1 && list[nextCursor - 2]) {
+      fromId = list[nextCursor - 2].sender_id;
+      toId = currentMsg.sender_id;
+    } else {
+      fromId = currentMsg.sender_id;
+      const agents = currentDiscussion?.agents || [];
+      const other = agents.find((a) => (a.id || a.agent_id) !== fromId);
+      if (other) toId = other.id || other.agent_id;
+    }
+
+    if (fromId && toId && fromId !== toId) {
+      setActivePassEvent({
+        from: fromId,
+        to: toId,
+        timestamp: Date.now(),
+        round: currentMsg.round_num,
+      });
+    }
+  };
 
   // Live Backend State
   const [healthStatus, setHealthStatus] = useState({ status: 'ok', latencyMs: 12 });
@@ -234,9 +480,23 @@ export default function App() {
   const pollTimerRef = useRef(null);
   const discussionLoadRef = useRef(0);
   const discussionRunRef = useRef(0);
-  const advisor = useDiscussionAdvisor(currentDiscussion, currentDiscussionStatus);
-  const advisorResponse = advisor.analysis.job?.result?.response;
-  const hasAdvisorReport = advisor.analysis.phase === 'completed' && Boolean(advisorResponse?.report);
+  // Number of transcript messages already shown; used to keep live-follow on
+  // the newest message without yanking a reader who scrubbed back.
+  const liveLengthRef = useRef(0);
+
+  // Browser back/forward buttons re-derive the active page from the URL.
+  useEffect(() => {
+    const onPopState = () => {
+      const nextTab = tabFromPathname(window.location.pathname);
+      setTab(nextTab);
+      const requestedId = new URLSearchParams(window.location.search).get('id');
+      if (nextTab === 'arena' && requestedId && requestedId !== currentDiscussionId) {
+        loadDiscussionById(requestedId);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [currentDiscussionId]);
 
   // Sync causal cache when discussion analytics loads
   React.useEffect(() => {
@@ -255,7 +515,7 @@ export default function App() {
   // Ensure non-admin users cannot access devops tab
   React.useEffect(() => {
     if (tab === 'devops' && !isAdmin) {
-      setTab('arena');
+      navigateTo('arena');
     }
   }, [tab, isAdmin]);
 
@@ -355,10 +615,13 @@ export default function App() {
       .then((d) => { if (!cancelled) setTopicsList(d.topics || []); })
       .catch(console.error);
 
-    refreshDiscussionsList().then((list) => {
-      if (!cancelled && generation === discussionRunRef.current && list.length > 0) {
-        loadDiscussionById(list[0].discussion_id);
-      }
+    refreshDiscussionsList().then(() => {
+      if (cancelled || generation !== discussionRunRef.current) return;
+      // The Arena starts empty: a saved record is only opened when the URL
+      // explicitly asks for it (?id=…), never by silently picking a recent one.
+      const requestedId = new URLSearchParams(window.location.search).get('id');
+      if (!requestedId || !localStorage.getItem('touchline_token')) return;
+      loadDiscussionById(requestedId);
     });
     return () => { cancelled = true; };
   }, []);
@@ -368,7 +631,7 @@ export default function App() {
     pause();
     if (!knownStatus) {
       discussionRunRef.current += 1;
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      clearTimeout(pollTimerRef.current);
       setIsStarting(false);
     }
     const generation = ++discussionLoadRef.current;
@@ -396,23 +659,34 @@ export default function App() {
         const data = await read(base);
         if (generation !== discussionLoadRef.current) return;
         setCurrentDiscussion(data);
-        setCursor((data.messages || []).length);
+        const loadedCount = (data.messages || []).length;
+        setCursor(loadedCount);
+        liveLengthRef.current = loadedCount;
         setCurrentDiscussionStatus(record.status || 'unknown');
-      }).catch((error) => {
+      }).catch(async (error) => {
         if (generation === discussionLoadRef.current) {
           setCurrentDiscussionStatus('unknown');
+          // Never silently substitute a different record: surface the failure.
+          await refreshDiscussionsList();
           setDiscussionLoadError(error.message);
         }
         console.error(error);
       }),
-      completion.then(() => read(`${base}/analytics`)).then((data) => {
+      completion.then(async () => {
+        const response = await fetch(`${base}/analytics`, { signal: AbortSignal.timeout(120000) });
+        if (!response.ok) throw new Error(`Could not load analytics (HTTP ${response.status}).`);
+        return response.json();
+      }).then((data) => {
         if (generation === discussionLoadRef.current) setCurrentAnalytics(data);
       }).catch(console.error),
     ]);
   };
 
-  // Reopening an unfinished record should still lead to its final report.
+  // Reopening an unfinished record keeps streaming its transcript: the worker
+  // checkpoints after every agent turn, so the page must re-read the record
+  // instead of only watching its status until a manual reload.
   useEffect(() => {
+    if (isStarting) return undefined;
     if (!currentDiscussionId || !currentDiscussion
       || !['running', 'queued', 'unknown'].includes(currentDiscussionStatus)) return undefined;
     let cancelled = false;
@@ -428,6 +702,22 @@ export default function App() {
             await loadDiscussionById(currentDiscussionId, data.status);
             return;
           }
+
+          const transcriptResponse = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}`, { signal: controller.signal });
+          if (cancelled) return;
+          if (transcriptResponse.ok) {
+            const transcript = await transcriptResponse.json();
+            if (cancelled) return;
+            const incoming = Array.isArray(transcript.messages) ? transcript.messages.length : 0;
+            if (incoming > 0) {
+              // Capture the previous length before scheduling: the updater runs
+              // later, when the ref already holds the new value.
+              const previousLength = liveLengthRef.current;
+              liveLengthRef.current = incoming;
+              setCurrentDiscussion(transcript);
+              setCursor((prev) => (prev >= previousLength ? incoming : prev));
+            }
+          }
         }
       } catch (error) {
         if (!cancelled) console.error('Discussion status check:', error);
@@ -440,19 +730,23 @@ export default function App() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [currentDiscussionId, currentDiscussionStatus, currentDiscussion]);
+  }, [currentDiscussionId, currentDiscussionStatus, currentDiscussion, isStarting]);
 
   // 4. Play / Pause Stepper
   const play = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    clearInterval(timerRef.current);
     const msgsList = currentDiscussion?.messages || [];
     if (!msgsList.length) return;
-    if (cursor >= msgsList.length) setCursor(0);
+    if (cursor >= msgsList.length) {
+      setCursor(0);
+      triggerPassForCursor(0, msgsList);
+    }
     setPlaying(true);
 
     timerRef.current = setInterval(() => {
       setCursor((prev) => {
         const next = prev + 1;
+        triggerPassForCursor(next, msgsList);
         if (next >= msgsList.length) {
           clearInterval(timerRef.current);
           setPlaying(false);
@@ -464,14 +758,14 @@ export default function App() {
   };
 
   const pause = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    clearInterval(timerRef.current);
     setPlaying(false);
   };
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      clearInterval(timerRef.current);
+      clearTimeout(pollTimerRef.current);
       discussionLoadRef.current += 1;
       discussionRunRef.current += 1;
     };
@@ -485,28 +779,36 @@ export default function App() {
     pause();
     const generation = ++discussionRunRef.current;
     discussionLoadRef.current += 1;
-    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    clearTimeout(pollTimerRef.current);
     setIsStarting(true);
     setCurrentDiscussion(null);
     setDiscussionLoadError(null);
     setCurrentDiscussionId(null);
     setCurrentDiscussionStatus('running');
     setCurrentAnalytics(null);
-    setProgressStatus('Generating dynamic 3v3 debate personas via LLM and initializing RAG retrieval...');
-    setTab('arena');
+    setProgressStatus('Initializing 6 specialist analyst personas and querying RAG embeddings...');
+    navigateTo('arena');
 
     try {
       const res = await fetch('/discussions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: prompt, num_rounds: selectedRounds, dynamic_personas: true }),
+        body: JSON.stringify({ topic: prompt, num_rounds: selectedRounds, num_agents: selectedAgentCount, dynamic_personas: false }),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (generation !== discussionRunRef.current) return;
 
       if (!res.ok) {
         setIsStarting(false);
-        alert('Could not start discussion. Check API status.');
+        let detail = `the API answered HTTP ${res.status}.`;
+        try {
+          const failure = await res.json();
+          if (failure && typeof failure.detail === 'string' && failure.detail) detail = failure.detail;
+        } catch {
+          // Non-JSON error body: keep the status-code message.
+        }
+        alert(`Could not start discussion: ${detail}`);
         return;
       }
 
@@ -514,6 +816,17 @@ export default function App() {
       if (generation !== discussionRunRef.current) return;
       const discId = d.discussion_id;
       setQuery('');
+      setCurrentDiscussionId(discId);
+      setCursor(0);
+      // Render the Arena shell immediately so the pitch and the message stream
+      // are on screen before the first agent has spoken.
+      setCurrentDiscussion({
+        discussion_id: discId,
+        topic: prompt,
+        messages: [],
+        num_rounds: selectedRounds,
+        agents: rosterAgents(selectedAgentCount),
+      });
 
       // Begin polling the background discussion worker
       const pollDiscussion = async () => {
@@ -521,32 +834,60 @@ export default function App() {
         try {
           const sRes = await fetch(`/discussions/${encodeURIComponent(discId)}/status`);
           if (generation !== discussionRunRef.current) return;
-          if (sRes.ok) {
-            const sData = await sRes.json();
+          const sData = sRes.ok ? await sRes.json() : { status: 'unknown' };
+          if (generation !== discussionRunRef.current) return;
+
+          // Live transcript: the worker checkpoints messages while it runs, so
+          // re-read the record on every poll and stream whatever exists yet.
+          const tRes = await fetch(`/discussions/${encodeURIComponent(discId)}`);
+          if (generation !== discussionRunRef.current) return;
+          if (tRes.ok) {
+            const transcript = await tRes.json();
             if (generation !== discussionRunRef.current) return;
-            if (sData.status === 'completed') {
-              setProgressStatus('All rounds finished. Preparing the advisor report…');
-              await refreshDiscussionsList();
-              if (generation !== discussionRunRef.current) return;
-              await loadDiscussionById(discId, 'completed');
-              if (generation === discussionRunRef.current) setIsStarting(false);
-              return;
-            } else if (sData.status === 'running') {
-              if (sData.current_round === 0) {
-                setProgressStatus('Generating dynamic 3v3 debate personas via LLM and formulating opening stances...');
-              } else {
-                setProgressStatus(
-                  `Round ${sData.current_round || 1} of ${sData.total_rounds || 3}: Opposing camps cross-examining arguments & evidence...`
-                );
-              }
-            } else if (sData.status === 'failed') {
-              setIsStarting(false);
-              // Attempt to load partial debate if available
-              await refreshDiscussionsList();
-              if (generation !== discussionRunRef.current) return;
-              await loadDiscussionById(discId, 'failed');
-              return;
+            if (Array.isArray(transcript.messages) && transcript.messages.length > 0) {
+              const incoming = transcript.messages.length;
+              const previousLength = liveLengthRef.current;
+              liveLengthRef.current = incoming;
+              setCurrentDiscussion(transcript);
+              // Stream new turns in place; keep a scrubbed-back cursor stable.
+              setCursor((prev) => (prev >= previousLength ? incoming : prev));
             }
+          }
+
+          if (sData.status === 'completed') {
+            setProgressStatus('All rounds finished. Loading the completed deliberation…');
+            await refreshDiscussionsList();
+            if (generation !== discussionRunRef.current) return;
+            await loadDiscussionById(discId, 'completed');
+            if (generation !== discussionRunRef.current) return;
+            // Finished record becomes deep-linkable: a refresh reopens it.
+            navigateTo('arena', { id: discId });
+            if (generation === discussionRunRef.current) setIsStarting(false);
+            return;
+          } else if (sData.status === 'running') {
+            if (sData.current_round === 0) {
+              setProgressStatus('Specialist analysts formulating opening stances from match knowledge base...');
+            } else {
+              setProgressStatus(
+                `Round ${sData.current_round || 1} of ${sData.total_rounds || 3}: Opposing camps cross-examining arguments & evidence...`
+              );
+            }
+          } else if (sData.status === 'failed') {
+            setIsStarting(false);
+            setProgressStatus('');
+            const list = await refreshDiscussionsList();
+            if (generation !== discussionRunRef.current) return;
+            const hasRecord = list.find((x) => x.discussion_id === discId && x.num_messages > 0);
+            if (hasRecord) {
+              await loadDiscussionById(discId, 'failed');
+            } else {
+              // No transcript was persisted: report the failure instead of
+              // silently opening some other, unrelated saved discussion.
+              setCurrentDiscussion(null);
+              setCurrentDiscussionStatus('unknown');
+              setDiscussionLoadError(sData.message || 'Discussion execution encountered an issue. Check server logs.');
+            }
+            return;
           }
         } catch (pollErr) {
           console.error('Polling error:', pollErr);
@@ -559,7 +900,10 @@ export default function App() {
       pollTimerRef.current = setTimeout(pollDiscussion, 2500);
     } catch (err) {
       console.error('Launch error:', err);
-      if (generation === discussionRunRef.current) setIsStarting(false);
+      if (generation === discussionRunRef.current) {
+        setIsStarting(false);
+        alert(`Could not start discussion: ${err?.message || 'the API is unreachable.'}`);
+      }
     }
   };
 
@@ -693,23 +1037,13 @@ export default function App() {
     ? currentDiscussion.agents.map((ag) => getAgentInfo(ag.agent_id, ag, currentDiscussion.agents))
     : Object.values(AGENTS);
 
-  // Fallback Trajectories Data
-  const fallbackTrajectories = {
-    tactical_analyst: [0.4, 0.72, 0.75, 0.81],
-    statistical_analyst: [-0.2, -0.4, -0.1, 0.31],
-    fan_analyst: [0.5, 0.6, 0.64, 0.7],
-    refereeing_analyst: [0, -0.1, 0.1, 0.15],
-    performance_analyst: [0, -0.25, -0.1, 0.2],
-    context_analyst: [0.3, 0.4, 0.55, 0.6],
-  };
-
-  // Trajectories Data (Dynamic from analytics or active debate)
+  // Trajectories Data (Real analytics only; no fabricated camp-decay series).
   const derivedTrajectories = React.useMemo(() => {
     if (currentAnalytics?.opinion_trajectories && Object.keys(currentAnalytics.opinion_trajectories).length > 0) {
       const res = {};
       let hasValidPoints = false;
       for (const [aid, points] of Object.entries(currentAnalytics.opinion_trajectories)) {
-        res[aid] = points.map((p) => p.stance_value ?? 0);
+        res[aid] = points.map((p) => p.stance_value ?? null);
         if (points.some((p) => p.stance_value != null && p.stance_value !== 0)) {
           hasValidPoints = true;
         }
@@ -718,20 +1052,10 @@ export default function App() {
         return res;
       }
     }
-    if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
-      const res = {};
-      currentDiscussion.agents.forEach((ag, idx) => {
-        const isCampB = idx >= Math.floor(currentDiscussion.agents.length / 2);
-        const sign = isCampB ? -1 : 1;
-        const b = sign * (0.45 + (idx % 3) * 0.15);
-        res[ag.agent_id] = [b, b * 0.85, b * 0.6, sign * 0.3];
-      });
-      return res;
-    }
-    return fallbackTrajectories;
+    return null;
   }, [currentAnalytics, currentDiscussion]);
 
-  // Influence Data (Dynamic from analytics or active debate)
+  // Influence Data (Real analytics only; no fabricated share percentages).
   const derivedInfluence = React.useMemo(() => {
     if (currentAnalytics?.influence && currentAnalytics.influence.length > 0) {
       const valid = currentAnalytics.influence.filter((inf) => inf.influence_score != null);
@@ -745,23 +1069,7 @@ export default function App() {
           .sort((a, b) => b.pct - a.pct);
       }
     }
-    if (currentDiscussion?.agents && currentDiscussion.agents.length > 0) {
-      const n = currentDiscussion.agents.length;
-      return currentDiscussion.agents
-        .map((ag, i) => ({
-          id: ag.agent_id,
-          pct: i === 0 ? 28 : i === 1 ? 22 : i === 2 ? 18 : i === 3 ? 14 : i === 4 ? 10 : 8,
-        }))
-        .sort((a, b) => b.pct - a.pct);
-    }
-    return [
-      { id: 'tactical_analyst', pct: 34 },
-      { id: 'statistical_analyst', pct: 24 },
-      { id: 'context_analyst', pct: 16 },
-      { id: 'fan_analyst', pct: 12 },
-      { id: 'performance_analyst', pct: 9 },
-      { id: 'refereeing_analyst', pct: 5 },
-    ];
+    return null;
   }, [currentAnalytics, currentDiscussion]);
 
   // Filtered History
@@ -796,9 +1104,10 @@ export default function App() {
       >
         <div
           style={{
-            maxWidth: '1120px',
+            maxWidth: (!isAuthenticated || tab === 'landing') ? '1360px' : '1120px',
+            width: '100%',
             margin: '0 auto',
-            padding: '14px 24px',
+            padding: (!isAuthenticated || tab === 'landing') ? '14px 32px' : '14px 24px',
             display: 'flex',
             alignItems: 'center',
             gap: '24px',
@@ -839,78 +1148,191 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation Tabs (Arena, History, Intelligence, DevOps for Admin) */}
-          <nav
-            style={{
-              display: 'flex',
-              gap: '4px',
-              padding: '4px',
-              borderRadius: 'var(--radius-lg)',
-              background: 'color-mix(in srgb, var(--color-surface) 55%, transparent)',
-              border: '1px solid var(--color-divider)',
-              marginLeft: 'auto',
-            }}
-          >
-            {[
-              { id: 'arena', label: 'Arena', icon: 'ph ph-chats-teardrop' },
-              { id: 'history', label: 'History', icon: 'ph ph-clock-counter-clockwise' },
-              { id: 'intel', label: 'Intelligence', icon: 'ph ph-chart-polar' },
-              ...(isAdmin ? [{ id: 'devops', label: 'DevOps', icon: 'ph ph-cpu', badge: 'Admin' }] : []),
-            ].map((t) => {
-              const on = tab === t.id;
-              return (
+          {/* Navigation & Controls: Strict Auth Gating */}
+          {isAuthenticated ? (
+            <>
+              {/* Navigation Tabs (Landing, Arena, History, Intelligence, DevOps for Admin) */}
+              <nav
+                style={{
+                  display: 'flex',
+                  gap: '4px',
+                  padding: '4px',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'color-mix(in srgb, var(--color-surface) 55%, transparent)',
+                  border: '1px solid var(--color-divider)',
+                  marginLeft: 'auto',
+                }}
+              >
+                {[
+                  { id: 'landing', label: 'Landing', icon: 'ph ph-house' },
+                  { id: 'arena', label: 'Arena', icon: 'ph ph-chats-teardrop' },
+                  { id: 'history', label: 'History', icon: 'ph ph-clock-counter-clockwise' },
+                  { id: 'intel', label: 'Intelligence', icon: 'ph ph-chart-polar' },
+                  ...(isAdmin ? [{ id: 'devops', label: 'DevOps', icon: 'ph ph-cpu', badge: 'Admin' }] : []),
+                ].map((t) => {
+                  const on = tab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => navigateTo(t.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '7px',
+                        padding: '7px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        border: on ? '1px solid color-mix(in srgb, var(--color-accent) 55%, transparent)' : '1px solid transparent',
+                        background: on ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
+                        color: on ? 'var(--color-accent-100)' : 'var(--color-neutral-400)',
+                        font: '500 13px var(--font-body)',
+                        cursor: 'pointer',
+                        transition: 'all .15s ease',
+                      }}
+                    >
+                      <i className={t.icon} style={{ fontSize: '15px' }}></i>
+                      {t.label}
+                      {t.badge && (
+                        <span
+                          style={{
+                            padding: '1px 5px',
+                            borderRadius: '999px',
+                            background: 'color-mix(in srgb, var(--color-accent) 25%, transparent)',
+                            color: 'var(--color-accent-300)',
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          {t.badge}
+                        </span>
+                      )}
+                      {t.id === 'history' && savedDiscussions.length > 0 && (
+                        <span
+                          style={{
+                            padding: '1px 6px',
+                            borderRadius: '999px',
+                            background: 'var(--color-accent-900)',
+                            color: 'var(--color-accent-200)',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {savedDiscussions.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {/* Persona Roster & Profile Identity Tag */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => setPersonaManagerModalOpen(true)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '7px',
-                    padding: '7px 14px',
+                    gap: '6px',
+                    padding: '7px 12px',
                     borderRadius: 'var(--radius-md)',
-                    border: on ? '1px solid color-mix(in srgb, var(--color-accent) 55%, transparent)' : '1px solid transparent',
-                    background: on ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
-                    color: on ? 'var(--color-accent-100)' : 'var(--color-neutral-400)',
-                    font: '500 13px var(--font-body)',
+                    background: 'color-mix(in srgb, var(--color-surface) 55%, transparent)',
+                    border: '1px solid var(--color-divider)',
+                    color: 'var(--color-neutral-300)',
+                    fontSize: '12px',
+                    fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all .15s ease',
                   }}
+                  title="Manage and create AI specialist personas"
                 >
-                  <i className={t.icon} style={{ fontSize: '15px' }}></i>
-                  {t.label}
-                  {t.badge && (
-                    <span
-                      style={{
-                        padding: '1px 5px',
-                        borderRadius: '999px',
-                        background: 'color-mix(in srgb, var(--color-accent) 25%, transparent)',
-                        color: 'var(--color-accent-300)',
-                        fontSize: '9px',
-                        fontWeight: 700,
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      {t.badge}
-                    </span>
-                  )}
-                  {t.id === 'history' && savedDiscussions.length > 0 && (
-                    <span
-                      style={{
-                        padding: '1px 6px',
-                        borderRadius: '999px',
-                        background: 'var(--color-accent-900)',
-                        color: 'var(--color-accent-200)',
-                        fontSize: '10px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {savedDiscussions.length}
-                    </span>
-                  )}
+                  <i className="ph ph-users-three" style={{ fontSize: '15px', color: 'var(--color-accent)' }}></i>
+                  <span>Personas</span>
                 </button>
-              );
-            })}
-          </nav>
+
+                {profile && (
+                  <button
+                    onClick={() => setProfileModalOpen(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '6px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--color-accent) 35%, transparent)',
+                      cursor: 'pointer',
+                      transition: 'all .15s ease',
+                    }}
+                    title="Click to view & edit Profile, Memory & Reports"
+                  >
+                    <div
+                      style={{
+                        width: '22px',
+                        height: '22px',
+                        borderRadius: '50%',
+                        background: 'var(--color-accent)',
+                        color: '#000',
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {profile.display_name?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.1 }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-neutral-100)' }}>
+                        {profile.display_name.toUpperCase()}
+                      </span>
+                      <span style={{ fontSize: '9.5px', color: 'var(--color-accent-300)', fontWeight: 600, letterSpacing: '0.04em' }}>
+                        {profile.profile_type?.toUpperCase()} PROFILE
+                      </span>
+                    </div>
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            /* Unauthenticated Header State: Nav tabs, Personas, Profile are completely hidden */
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                className="btn btn-ghost"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '12.5px',
+                  color: 'var(--color-accent-200)',
+                  border: '1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+                  cursor: 'pointer',
+                }}
+              >
+                <i className="ph ph-lightning" style={{ fontSize: '14px' }}></i>
+                <span>Quick Demo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthModalMode('login'); setAuthModalOpen(true); }}
+                className="btn btn-ghost"
+                style={{ padding: '6px 14px', fontSize: '13px', color: 'var(--color-neutral-300)', cursor: 'pointer' }}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthModalMode('register'); setAuthModalOpen(true); }}
+                className="btn btn-primary"
+                style={{ padding: '6px 16px', fontSize: '13px', cursor: 'pointer' }}
+              >
+                Get Started
+              </button>
+            </div>
+          )}
 
           {/* Live System Status Pill */}
           <div
@@ -946,11 +1368,30 @@ export default function App() {
       {/* ══════════════════════════════════════════════════
           MAIN CONTENT AREA
       ══════════════════════════════════════════════════ */}
-      <main style={{ maxWidth: '1120px', margin: '0 auto', padding: '40px 24px 80px' }}>
-        {/* ────────────────────────────────────────────────
-            TAB 1: ARENA (DELIBERATION ROOM)
-        ──────────────────────────────────────────────── */}
-        {tab === 'arena' && (
+      {(!isAuthenticated || tab === 'landing') ? (
+        <main style={{ width: '100%', margin: 0, padding: 0 }}>
+          {/* ────────────────────────────────────────────────
+              TAB 0: FUTURISTIC LANDING PAGE WITH ANIMATED FOOTBALL HERO
+          ──────────────────────────────────────────────── */}
+          <LandingPage
+            onGetStarted={() => {
+              setAuthModalMode('register');
+              setAuthModalOpen(true);
+            }}
+            onSignIn={() => {
+              setAuthModalMode('login');
+              setAuthModalOpen(true);
+            }}
+            onExploreDemo={handleDemoLogin}
+            onDemoLogin={handleDemoLogin}
+          />
+        </main>
+      ) : (
+        <main style={{ maxWidth: '1120px', margin: '0 auto', padding: '40px 24px 80px' }}>
+          {/* ────────────────────────────────────────────────
+              TAB 1: ARENA (DELIBERATION ROOM)
+          ──────────────────────────────────────────────── */}
+          {tab === 'arena' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Hero Heading */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '720px' }}>
@@ -966,7 +1407,7 @@ export default function App() {
                   textWrap: 'balance',
                 }}
               >
-                Six specialist agents debate your question. An advisor prepares evidence-cited advice after the final round.
+                Specialist agents debate your question round by round, grounded in the evidence they retrieve.
               </h1>
               <p
                 style={{
@@ -1068,6 +1509,46 @@ export default function App() {
                     <option value={5} style={{ background: '#0c1224', color: '#f1f5f9' }}>5 Rounds</option>
                   </select>
                 </div>
+                {/* Agent Count Selector (Feature Group F & Section 20) */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '0 12px',
+                    height: '50px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'color-mix(in srgb, var(--color-bg) 70%, transparent)',
+                    border: '1px solid var(--color-divider)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className="ph ph-users" style={{ fontSize: '16px', color: 'var(--color-accent)' }}></i>
+                  <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                    Agents:
+                  </span>
+                  <select
+                    value={selectedAgentCount}
+                    onChange={(e) => setSelectedAgentCount(Number(e.target.value))}
+                    disabled={isStarting}
+                    aria-label="Select number of agents in deliberation"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      color: 'var(--color-neutral-100)',
+                      font: '600 13px var(--font-body)',
+                      cursor: 'pointer',
+                      padding: '4px 6px 4px 2px',
+                    }}
+                  >
+                    <option value={2} style={{ background: '#0c1224', color: '#f1f5f9' }}>2 Agents (Head-to-Head)</option>
+                    <option value={3} style={{ background: '#0c1224', color: '#f1f5f9' }}>3 Agents (Triad)</option>
+                    <option value={4} style={{ background: '#0c1224', color: '#f1f5f9' }}>4 Agents (Tactical Box)</option>
+                    <option value={5} style={{ background: '#0c1224', color: '#f1f5f9' }}>5 Agents</option>
+                    <option value={6} style={{ background: '#0c1224', color: '#f1f5f9' }}>6 Agents (Full Pitch 3v3)</option>
+                  </select>
+                </div>
                 <button
                   className="btn btn-primary"
                   onClick={() => handleStart()}
@@ -1124,7 +1605,7 @@ export default function App() {
                   {progressStatus}
                 </p>
                 <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>
-                  Agents are querying evidence and cross-examining arguments. The advisor report follows automatically after the final round.
+                  Agents are querying evidence and cross-examining arguments.
                 </span>
               </div>
             )}
@@ -1208,28 +1689,6 @@ export default function App() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <a href="#discussion-advisor" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                    <i className="ph ph-compass" aria-hidden="true"></i>
-                    {hasAdvisorReport ? 'Read advisor report' : 'Discussion advisor'}
-                  </a>
-                  <span style={{ fontSize: '12.5px', color: 'var(--color-neutral-400)' }} role="status">
-                    {advisor.analysis.phase === 'completed'
-                      ? advisorResponse?.status === 'failed'
-                        ? 'Advisor could not complete — view details below'
-                        : advisorResponse?.status === 'insufficient_evidence'
-                          ? 'Advisor needs more evidence — view details below'
-                          : advisorResponse?.status === 'partial'
-                            ? 'Partial report ready — review the evidence gaps below'
-                            : 'Report ready below the discussion'
-                      : ['submitting', 'queued', 'running'].includes(advisor.analysis.phase)
-                        ? 'Preparing advice from the finished discussion…'
-                        : advisor.analysis.phase === 'error'
-                          ? 'Advisor needs attention — view details below'
-                          : 'Advice follows once all rounds are complete'}
-                  </span>
-                </div>
-
                 {/* Specialist Agent Matrix Chips */}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {activeAgents.map((a) => {
@@ -1278,6 +1737,18 @@ export default function App() {
                   })}
                 </div>
 
+                {/* Football Pitch Agent Communication Graph (Image #1) */}
+                <AgentCommunicationPitch
+                  agents={currentDiscussion?.agents || activeAgents}
+                  messages={rawMsgs}
+                  activeRound={activeRound}
+                  consensus={roundAlignment || 54}
+                  cursor={cursor}
+                  playing={playing}
+                  activePassEvent={activePassEvent}
+                  onSelectAgent={(aid) => setHoverAgent(aid)}
+                />
+
                 {/* Stepper Bar & Round Controls */}
                 <div
                   style={{
@@ -1299,7 +1770,9 @@ export default function App() {
                           key={r}
                           onClick={() => {
                             pause();
-                            setCursor(rawMsgs.filter((m) => m.round_num <= r).length);
+                            const next = rawMsgs.filter((m) => m.round_num <= r).length;
+                            setCursor(next);
+                            triggerPassForCursor(next);
                           }}
                           style={{
                             padding: '7px 14px',
@@ -1323,7 +1796,11 @@ export default function App() {
                       className="btn btn-ghost btn-icon"
                       onClick={() => {
                         pause();
-                        setCursor((c) => Math.max(0, c - 1));
+                        setCursor((c) => {
+                          const next = Math.max(0, c - 1);
+                          triggerPassForCursor(next);
+                          return next;
+                        });
                       }}
                       aria-label="Previous message"
                     >
@@ -1341,7 +1818,11 @@ export default function App() {
                       className="btn btn-ghost btn-icon"
                       onClick={() => {
                         pause();
-                        setCursor((c) => Math.min(rawMsgs.length, c + 1));
+                        setCursor((c) => {
+                          const next = Math.min(rawMsgs.length, c + 1);
+                          triggerPassForCursor(next);
+                          return next;
+                        });
                       }}
                       aria-label="Next message"
                     >
@@ -1443,9 +1924,10 @@ export default function App() {
                                 Round {m.round_num}
                               </span>
                             </div>
-                            <p style={{ margin: 0, fontSize: '14.5px', lineHeight: 1.6, color: 'var(--color-neutral-300)', textWrap: 'pretty' }}>
-                              {m.content}
-                            </p>
+                            <MarkdownPreview
+                              content={m.content}
+                              style={{ margin: 0, fontSize: '14.5px', lineHeight: 1.6, textWrap: 'pretty' }}
+                            />
                           </div>
                         </article>
                       </div>
@@ -1455,21 +1937,28 @@ export default function App() {
               </div>
             )}
 
-            {currentDiscussion && (
-              <AdvisorPanel
-                key={currentDiscussionId}
-                discussion={currentDiscussion}
-                discussionStatus={currentDiscussionStatus}
-                {...advisor}
-              />
-            )}
-
             {!currentDiscussion && currentDiscussionStatus === 'checking' && (
               <p role="status" style={{ color: 'var(--color-neutral-400)' }}>Loading discussion and checking completion…</p>
             )}
 
             {discussionLoadError && (
-              <p role="alert" style={{ color: 'var(--color-neutral-300)' }}>{discussionLoadError} Open the discussion from History to retry.</p>
+              <div
+                role="alert"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '12px 18px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'color-mix(in srgb, #f43f5e 12%, transparent)',
+                  border: '1px solid color-mix(in srgb, #f43f5e 35%, transparent)',
+                  color: '#fda4af',
+                  fontSize: '13px',
+                }}
+              >
+                <i className="ph ph-warning-circle" style={{ fontSize: '18px', color: '#f43f5e' }}></i>
+                <span>{discussionLoadError}</span>
+              </div>
             )}
 
             {/* Empty state when no debate has run yet and not starting */}
@@ -1506,11 +1995,53 @@ export default function App() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '580px' }}>
                   <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 600, color: 'var(--color-neutral-100)' }}>
-                    Deliberation Arena
+                    Arena Command Ready
                   </h3>
                   <p style={{ margin: 0, fontSize: '14.5px', color: 'var(--color-neutral-400)', lineHeight: 1.5 }}>
-                    Enter any fixture, match question, or debate thesis above. Six autonomous specialist agents will query live match evidence, cross-examine opposing viewpoints, and calculate consensus.
+                    Enter a fixture, match question or debate thesis in the command bar above — or pick one of the
+                    tactical briefings below. Six autonomous specialist agents will query live match evidence,
+                    cross-examine opposing viewpoints and calculate consensus.
                   </p>
+                </div>
+
+                {/* Suggested tactical briefings — fill the query input */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', maxWidth: '820px' }}>
+                  {[
+                    'Germany vs Japan 2022 tactical breakdown',
+                    'Argentina vs France 2022 Final',
+                    'Arsenal clinical striker January transfer',
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setQuery(suggestion)}
+                      title={`Load "${suggestion}" into the command bar`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '9px 15px',
+                        borderRadius: '999px',
+                        background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--color-accent) 32%, transparent)',
+                        color: 'var(--color-accent-100)',
+                        font: '500 13px var(--font-body)',
+                        cursor: 'pointer',
+                        transition: 'all .15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'color-mix(in srgb, var(--color-accent) 18%, transparent)';
+                        e.currentTarget.style.borderColor = 'var(--color-accent)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'color-mix(in srgb, var(--color-accent) 8%, transparent)';
+                        e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--color-accent) 32%, transparent)';
+                      }}
+                    >
+                      <i className="ph ph-lightning" style={{ fontSize: '14px' }}></i>
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
 
                 {/* 6 Specialist Agents Matrix */}
@@ -1579,7 +2110,7 @@ export default function App() {
         {/* ────────────────────────────────────────────────
             TAB 2: HISTORY (DEDICATED CONVERSATION ARCHIVE)
         ──────────────────────────────────────────────── */}
-        {tab === 'history' && (
+        {isAuthenticated && tab === 'history' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <h1 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '32px', letterSpacing: '-0.02em', color: 'var(--color-neutral-100)' }}>
@@ -1645,6 +2176,40 @@ export default function App() {
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <span className="tag tag-neutral">{h.discussion_id}</span>
                     <span className="tag tag-accent">{h.num_rounds || 3} Rounds</span>
+                    {h.status === 'queued' ? (
+                      <span
+                        className="tag"
+                        style={{
+                          color: 'var(--color-accent-300, #38bdf8)',
+                          borderColor: 'var(--color-accent-400, #0284c7)',
+                          background: 'color-mix(in srgb, var(--color-accent, #0284c7) 15%, transparent)',
+                        }}
+                      >
+                        Queued in Worker
+                      </span>
+                    ) : h.status === 'running' ? (
+                      <span
+                        className="tag"
+                        style={{
+                          color: '#4ade80',
+                          borderColor: '#22c55e',
+                          background: 'color-mix(in srgb, #22c55e 15%, transparent)',
+                        }}
+                      >
+                        Deliberating Live
+                      </span>
+                    ) : (h.num_messages === 0 || h.status === 'failed') ? (
+                      <span
+                        className="tag"
+                        style={{
+                          color: 'var(--color-amber-300, #fbbf24)',
+                          borderColor: 'var(--color-amber-400, #f59e0b)',
+                          background: 'color-mix(in srgb, var(--color-amber-500, #f59e0b) 12%, transparent)',
+                        }}
+                      >
+                        Failed / No messages recorded
+                      </span>
+                    ) : null}
                   </div>
                   <h3
                     style={{
@@ -1665,18 +2230,54 @@ export default function App() {
                       <span style={{ color: 'var(--color-accent-300)' }}>{h.num_messages || 0} messages</span> • {h.num_agents || 6} agents
                     </span>
                   </div>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => {
-                      loadDiscussionById(h.discussion_id);
-                      setTab('arena');
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
-                  >
-                    <i className="ph ph-arrow-counter-clockwise" style={{ fontSize: '15px' }}></i>
-                    Resume / Replay
-                  </button>
+                  {(h.status === 'queued' || h.status === 'running') ? (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => {
+                        loadDiscussionById(h.discussion_id);
+                        navigateTo('arena', { id: h.discussion_id });
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
+                    >
+                      <i className="ph ph-broadcast" style={{ fontSize: '15px' }}></i>
+                      Watch Live
+                    </button>
+                  ) : (h.num_messages === 0 || h.status === 'failed') ? (
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setQuery(h.topic);
+                        navigateTo('arena');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      style={{
+                        marginTop: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '7px',
+                        background: 'var(--color-amber-500, #f59e0b)',
+                        color: '#1a1a1a',
+                      }}
+                    >
+                      <i className="ph ph-arrow-clockwise" style={{ fontSize: '15px' }}></i>
+                      Retry Topic
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => {
+                        loadDiscussionById(h.discussion_id);
+                        navigateTo('arena', { id: h.discussion_id });
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
+                    >
+                      <i className="ph ph-arrow-counter-clockwise" style={{ fontSize: '15px' }}></i>
+                      Resume / Replay
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -1701,7 +2302,7 @@ export default function App() {
         {/* ────────────────────────────────────────────────
             TAB 3: INTELLIGENCE (ANALYTICS DASHBOARD)
         ──────────────────────────────────────────────── */}
-        {tab === 'intel' && (
+        {isAuthenticated && tab === 'intel' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <h1 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '32px', letterSpacing: '-0.02em', color: 'var(--color-neutral-100)' }}>
@@ -1714,13 +2315,6 @@ export default function App() {
 
             {currentDiscussion ? (
               <>
-                <AdvisorPanel
-                  key={currentDiscussionId}
-                  discussion={currentDiscussion}
-                  discussionStatus={currentDiscussionStatus}
-                  {...advisor}
-                />
-
                 {/* Executive Consensus Card */}
                 <div
                   style={{
@@ -2063,12 +2657,13 @@ export default function App() {
                           R{i}
                         </text>
                       ))}
-                      {Object.entries(derivedTrajectories).map(([id, pts]) => {
+                      {derivedTrajectories ? Object.entries(derivedTrajectories).map(([id, pts]) => {
                         const isHovered = hoverAgent === id;
                         const opacity = hoverAgent && !isHovered ? 0.18 : 1;
                         const strokeWidth = isHovered ? 3.5 : 2;
                         const a = getAgentInfo(id, null, currentDiscussion?.agents);
-                        const lastPt = pts[pts.length - 1] ?? pts[3] ?? 0;
+                        const measuredPts = pts.filter((v) => v != null);
+                        const lastPt = measuredPts[measuredPts.length - 1];
                         return (
                           <g key={id}>
                             <path
@@ -2080,14 +2675,20 @@ export default function App() {
                               opacity={opacity}
                               style={{ transition: 'opacity .2s, stroke-width .2s' }}
                             />
-                            <circle cx="620" cy={Y(lastPt)} r="3.5" fill={a.color} opacity={opacity} />
+                            {lastPt != null && (
+                              <circle cx="620" cy={Y(lastPt)} r="3.5" fill={a.color} opacity={opacity} />
+                            )}
                           </g>
                         );
-                      })}
+                      }) : (
+                        <text x="330" y="150" textAnchor="middle" fontSize="13" fill="var(--color-neutral-500)">
+                          Stances not yet scored for this discussion
+                        </text>
+                      )}
                     </svg>
 
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {Object.keys(derivedTrajectories).map((id) => {
+                      {derivedTrajectories ? Object.keys(derivedTrajectories).map((id) => {
                         const a = getAgentInfo(id, null, currentDiscussion?.agents);
                         return (
                           <button
@@ -2111,7 +2712,7 @@ export default function App() {
                             {a.name}
                           </button>
                         );
-                      })}
+                      }) : null}
                     </div>
                   </div>
 
@@ -2133,7 +2734,7 @@ export default function App() {
                       </h3>
                       <span style={{ fontSize: '12px', color: 'var(--color-neutral-500)' }}>Share of consensus shift</span>
                     </div>
-                    {derivedInfluence.map((f, i) => {
+                    {derivedInfluence ? derivedInfluence.map((f, i) => {
                       const agent = getAgentInfo(f.id, null, currentDiscussion?.agents);
                       return (
                         <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
@@ -2159,7 +2760,11 @@ export default function App() {
                           </div>
                         </div>
                       );
-                    })}
+                    }) : (
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-neutral-500)' }}>
+                        Influence scores need stance movement across consecutive rounds — none measurable yet for this discussion.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -2203,7 +2808,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      {activeCausalData ? (
+                      {activeCausalData && (activeCausalData.evaluated_exchanges_count || 0) > 0 ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', borderRadius: '999px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
                           <i className="ph ph-check-circle" style={{ color: '#4ade80', fontSize: '16px' }}></i>
                           <span style={{ fontSize: '12px', fontWeight: 600, color: '#4ade80' }}>Cached & Verified (No Rerun)</span>
@@ -2286,7 +2891,7 @@ export default function App() {
                           {Object.entries(activeCausalData.agent_causal_influences || {}).map(([aid, info]) => {
                             const agent = getAgentInfo(aid, null, currentDiscussion?.agents);
                             const score = info.causal_score != null ? info.causal_score : 0;
-                            const isTop = aid === activeCausalData.top_causal_influencer;
+                            const isTop = aid === activeCausalData.top_causal_influencer && info.causal_score != null;
                             return (
                               <div
                                 key={aid}
@@ -2310,7 +2915,7 @@ export default function App() {
                                   </span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: 'var(--color-neutral-400)' }}>
-                                  <span>Causal Shift τ: <strong style={{ color: 'var(--color-neutral-100)' }}>+{score.toFixed(4)}</strong></span>
+                                  <span>Causal Shift τ: <strong style={{ color: 'var(--color-neutral-100)' }}>{info.causal_score != null ? `+${info.causal_score.toFixed(4)}` : 'not evaluated'}</strong></span>
                                   <span>{info.exchange_count} exchanges</span>
                                 </div>
                                 <div style={{ height: '4px', borderRadius: '999px', background: 'var(--color-neutral-900)', overflow: 'hidden' }}>
@@ -2436,7 +3041,7 @@ export default function App() {
         {/* ────────────────────────────────────────────────
             TAB 4: DEVOPS (SYSTEM HEALTH & TERMINAL - ADMIN ONLY)
         ──────────────────────────────────────────────── */}
-        {tab === 'devops' && isAdmin && (
+        {isAuthenticated && tab === 'devops' && isAdmin && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2472,7 +3077,7 @@ export default function App() {
                     window.history.replaceState({}, '', url.toString());
                   } catch (_) {}
                   setIsAdmin(false);
-                  setTab('arena');
+                  navigateTo('arena');
                 }}
                 style={{
                   display: 'flex',
@@ -2562,7 +3167,60 @@ export default function App() {
             </div>
           </section>
         )}
-      </main>
+        </main>
+      )}
+
+      {/* ══════════════════════════════════════════════════
+          MULTI-TENANT PLATFORM MODALS (AUTH, ONBOARDING, PROFILE, PERSONAS)
+      ══════════════════════════════════════════════════ */}
+      <AuthModal
+        isOpen={authModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setAuthModalOpen(false)}
+        onLoginSuccess={(data) => {
+          setToken(data.token);
+          setUser(data.user);
+          setProfile(data.profile);
+          navigateTo('arena');
+        }}
+        onRegisterSuccess={(data) => {
+          setToken(data.token);
+          setUser(data.user);
+          setProfile(data.profile);
+          setOnboardingModalOpen(true);
+        }}
+      />
+
+      <OnboardingModal
+        isOpen={onboardingModalOpen}
+        profile={profile}
+        token={token}
+        onClose={() => setOnboardingModalOpen(false)}
+        onComplete={(updatedProfile) => {
+          setProfile(updatedProfile);
+          setOnboardingModalOpen(false);
+          navigateTo('arena');
+        }}
+      />
+
+      <ProfileModal
+        isOpen={profileModalOpen}
+        profile={profile}
+        user={user}
+        token={token}
+        onClose={() => setProfileModalOpen(false)}
+        onUpdateProfile={(updated) => setProfile(updated)}
+        onLogout={handleLogout}
+      />
+
+      <PersonaManagerModal
+        isOpen={personaManagerModalOpen}
+        token={token}
+        onClose={() => setPersonaManagerModalOpen(false)}
+        onSelectPersonaForArena={() => {
+          navigateTo('arena');
+        }}
+      />
     </div>
   );
 }
