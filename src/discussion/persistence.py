@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,11 @@ from uuid import uuid4
 from src.discussion.types import DiscussionResult
 
 logger = logging.getLogger(__name__)
+
+# A checkpoint can collide with a reader holding the destination open on
+# Windows; retry the atomic rename briefly before giving up.
+_REPLACE_ATTEMPTS = 5
+_REPLACE_DELAY_SECONDS = 0.05
 
 
 def save_discussion(
@@ -81,7 +87,24 @@ def save_discussion(
         with open(temp_file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False, default=str)
 
-        os.replace(temp_file_path, file_path)
+        # On Windows a concurrent reader (the API serving GET /discussions/{id}
+        # while a discussion is checkpointing) briefly holds the destination
+        # open, which makes the replace fail with a sharing violation. Retry
+        # instead of aborting a multi-minute run.
+        for attempt in range(_REPLACE_ATTEMPTS):
+            try:
+                os.replace(temp_file_path, file_path)
+                break
+            except OSError:
+                if attempt == _REPLACE_ATTEMPTS - 1:
+                    raise
+                logger.debug(
+                    "Rename of %s was blocked; retrying (%d/%d).",
+                    file_path,
+                    attempt + 1,
+                    _REPLACE_ATTEMPTS,
+                )
+                time.sleep(_REPLACE_DELAY_SECONDS * (attempt + 1))
 
         file_size = os.path.getsize(file_path)
         logger.info(
