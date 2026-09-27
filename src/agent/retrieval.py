@@ -1,7 +1,11 @@
+import logging
+
 from .interfaces import RetrievalInterface
 from .types import RetrievedSource
 
-from src.rag.search import RetrievalError, search
+from src.rag.search import search
+
+logger = logging.getLogger(__name__)
 
 
 class RAGRetrieval(RetrievalInterface):
@@ -18,13 +22,19 @@ class RAGRetrieval(RetrievalInterface):
         and returns the results as a list of RetrievedSource objects.
         """
         try:
-            # We use the search function from Week 1 which returns a list of dictionaries:
-            # doc_id, chunk_index, title, url, text, similarity
             raw_results = search(query, k=self.k)
-        except RetrievalError:
-            raise
         except Exception as error:
-            raise RetrievalError("Knowledge retrieval failed.") from error
+            # The knowledge base (Postgres/pgvector or the embedding provider)
+            # is unreachable. This is an infrastructure outage, not an empty
+            # search result: log it and degrade to no sources so callers
+            # (agents, discussions, tools) can continue using their own
+            # knowledge, persona background, and web_search instead of
+            # aborting the whole run.
+            logger.warning(
+                "Knowledge retrieval unavailable (%s: %s); returning no sources.",
+                type(error).__name__, error,
+            )
+            return []
         
         sources = []
         for result in raw_results:

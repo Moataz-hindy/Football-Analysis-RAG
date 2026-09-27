@@ -44,9 +44,17 @@ class Agent:
             sources = self.retrieval.retrieve(search_query)
             initial.result = [asdict(source) for source in sources]
         except Exception as error:
+            # An unavailable knowledge base must never abort the turn:
+            # log, record the failure on the evidence trail, and proceed
+            # with empty sources (tools like web_search still work).
+            import logging
+            logging.getLogger(__name__).warning(
+                "Initial retrieval failed (%s: %s); proceeding without sources.",
+                type(error).__name__, error,
+            )
             initial.status = "failed"
             initial.error = str(error)
-            raise AgentTurnError(error, tool_calls) from error
+            sources = []
 
         messages = self._build_messages(task=task, memory=memory, sources=sources)
         content, tool_calls = self._complete_with_tools(messages, tool_calls)
@@ -158,7 +166,26 @@ class Agent:
                         raise RuntimeError("Model returned an empty response")
                     return content, tool_calls
                 if round_index == self.max_tool_rounds:
-                    raise RuntimeError("LLM exceeded the maximum number of tool rounds")
+                    # The model keeps requesting tools at the cap. Force a
+                    # final no-tools answer from the evidence gathered so far
+                    # instead of aborting the whole discussion turn.
+                    final_messages = [
+                        {**message, "role": message["role"]}
+                        for message in messages
+                    ]
+                    final_messages.append({
+                        "role": "user",
+                        "content": (
+                            "Tool budget exhausted. Using ONLY the evidence already "
+                            "gathered above, produce your final response now. "
+                            "Do not request any more tools."
+                        ),
+                    })
+                    result = self.llm.generate(messages=final_messages, tools=None)
+                    content, extra_calls = self._parse_result(result)
+                    if not content.strip():
+                        raise RuntimeError("LLM exceeded the maximum number of tool rounds")
+                    return content, tool_calls
 
                 messages.append({"role": "assistant", "content": content})
                 for call in requested_calls:
@@ -167,10 +194,11 @@ class Agent:
                         call.result = self.tools.execute(call.name, call.arguments)
                         call.status = "success"
                     except Exception as error:
+                        # A malformed tool call must not abort the turn;
+                        # record it and let the model recover next round.
                         call.status = "failed"
                         call.error = str(error)
                         call.result = None
-                        raise
                     messages.append({"role": "tool", "name": call.name,
                                      "content": str(call.result)})
         except Exception as error:
