@@ -129,7 +129,7 @@ def generate_discussion_synthesis(
     if llm_client is None:
         try:
             from src.agent.llm import OpenAICompatibleLLM
-            llm_client = OpenAICompatibleLLM(temperature=0.2, max_tokens=2500)
+            llm_client = OpenAICompatibleLLM(temperature=0.2, max_tokens=2500, max_retries=0, pace_waits=(2.0,))
         except Exception as e:
             logger.warning(f"Could not instantiate LLM client for synthesis: {e}")
             return _generate_fallback_synthesis(discussion_id, topic, agent_ids, messages)
