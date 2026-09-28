@@ -478,3 +478,37 @@ async def get_discussion_synthesis(
         compute_or_load_synthesis,
         discussion_id,
     )
+
+
+def compute_or_load_advisor_decision(discussion_id: str) -> dict:
+    """Compute or load cached LLM strategic advisor decision."""
+    cache_path = REPORTS_DIR / "api_cache" / f"{discussion_id}_advisor.json"
+    if cache_path.is_file():
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception as err:
+            logger.warning("Could not read advisor decision cache: %s", err)
+
+    from src.api.services.discussion_service import get_saved_discussion
+    from src.analytics.advisor import generate_advisor_decision
+
+    discussion = get_saved_discussion(discussion_id)
+    advisor = generate_advisor_decision(discussion)
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(advisor, indent=2), encoding="utf-8")
+    except Exception as err:
+        logger.warning("Failed to persist advisor decision cache: %s", err)
+
+    return advisor
+
+
+async def get_discussion_advisor_decision(
+    discussion_id: str,
+) -> dict:
+    """Run advisor decision without blocking the event loop."""
+    return await run_in_threadpool(
+        compute_or_load_advisor_decision,
+        discussion_id,
+    )

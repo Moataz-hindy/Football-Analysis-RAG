@@ -14,17 +14,18 @@ def format_persona_block(persona: PersonaInterface) -> str:
     """
     expertise = ", ".join(persona.expertise) or "general football knowledge"
     priorities = ", ".join(persona.priorities) or "no stated priorities"
+    philosophy = f"Core Football Philosophy & Perspective: {persona.stance}\n" if persona.stance else ""
     return (
         f"You are {persona.name}.\n"
         f"Background: {persona.background}\n"
-        f"Your stance on football topics: {persona.stance}\n"
+        f"{philosophy}"
         f"You must always write in this communication style: {persona.communication_style}\n"
         f"Your areas of expertise: {expertise}\n"
         f"Your priorities when forming an opinion, in order: {priorities}\n\n"
-        "Reason and speak from this identity consistently. Do not default "
-        "to a neutral, balanced, or generic tone -- your stance and "
-        "priorities should visibly shape which evidence you emphasize and "
-        "what conclusion you reach."
+        "Reason and speak from this identity consistently. Your background and priorities "
+        "shape how you analyze matches, but you do NOT have a pre-decided or locked conclusion "
+        "on the debate question. Evaluate the facts dynamically and remain open to adjusting "
+        "your stance when presented with strong arguments and verified match evidence."
     )
 
 

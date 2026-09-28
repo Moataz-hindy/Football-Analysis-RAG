@@ -17,6 +17,7 @@ from src.api.services.discussion_service import (
 )
 from src.discussion.types import DiscussionResult
 from src.api.schemas import (
+    AdvisorDecisionResponse,
     AgentInfluenceOut,
     AgentInfo,
     AnalyticsResponse,
@@ -419,4 +420,40 @@ async def get_or_compute_synthesis_route(discussion_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Synthesis failed: {exc}",
+        )
+
+
+@router.post(
+    "/discussions/{discussion_id}/advisor",
+    response_model=AdvisorDecisionResponse,
+    tags=["Analytics"],
+    summary="Generate or retrieve strategic advisor decision and executive ruling",
+)
+@router.get(
+    "/discussions/{discussion_id}/advisor",
+    response_model=AdvisorDecisionResponse,
+    tags=["Analytics"],
+    summary="Get strategic advisor decision and executive ruling",
+)
+async def get_or_compute_advisor_route(discussion_id: str):
+    """Retrieve or generate LLM strategic advisor decision dossier."""
+    from src.api.services.analytics_service import get_discussion_advisor_decision
+
+    try:
+        return await get_discussion_advisor_decision(discussion_id)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discussion '{discussion_id}' not found.",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.exception("Advisor decision generation failed for %s", discussion_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Advisor decision failed: {exc}",
         )

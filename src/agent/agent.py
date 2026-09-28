@@ -290,14 +290,18 @@ class Agent:
         sources: list[RetrievedSource],
     ) -> list[dict[str, str]]:
         """Build the model context without coupling to component implementations."""
-        persona = "\n".join([
+        persona_lines = [
             f"Name: {self.persona.name}",
             f"Background: {self.persona.background}",
-            f"Stance: {self.persona.stance}",
+        ]
+        if self.persona.stance:
+            persona_lines.append(f"Core Football Philosophy: {self.persona.stance}")
+        persona_lines.extend([
             f"Communication style: {self.persona.communication_style}",
             f"Expertise: {', '.join(self.persona.expertise)}",
             f"Priorities: {', '.join(self.persona.priorities)}",
         ])
+        persona = "\n".join(persona_lines)
 
         source_context = self._format_sources(sources)
         available_tools = ", ".join(t.name for t in self.tools.get_tools()) if self.tools else "none"
@@ -309,14 +313,18 @@ class Agent:
             summary_context = f"\n\nEARLIER CONTEXT SUMMARY:\n{mem_str}\n"
 
         system_message = (
-            "You are an AI agent operating according to this persona.\n\n"
+            "You are an AI agent operating according to this persona identity and football perspective.\n\n"
             f"PERSONA:\n{persona}"
             f"{summary_context}\n"
             f"KNOWLEDGE:\n{source_context}\n\n"
             f"AVAILABLE TOOLS: {available_tools}.\n"
             "Only invoke tools from the AVAILABLE TOOLS list. Do not attempt to invoke unlisted tools.\n"
-            "Use the retrieved knowledge to ground your response. "
-            "Do not invent sources."
+            "Use the retrieved knowledge to ground your response. Do not invent sources.\n\n"
+            "COGNITIVE & DEBATE GUIDELINE:\n"
+            "Your persona defines WHO you are (your background, character voice, and core football philosophy). "
+            "You do NOT possess a pre-decided or locked conclusion on the debate topic. "
+            "Formulate your position dynamically based on your persona's analytical priorities and concrete match facts. "
+            "You have full analytical freedom to adjust, calibrate, or change your stance if peer analysts provide compelling evidence or superior tactical arguments."
         )
 
         messages: list[dict[str, str]] = [{"role": "system", "content": system_message}]

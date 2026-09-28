@@ -217,6 +217,21 @@ class AnalyticsResponse(BaseModel):
     causal_influence: dict[str, Any] | None = None
 
 
+# ── Strategic Advisor Decision ──
+class AdvisorDecisionResponse(BaseModel):
+    discussion_id: str
+    topic: str
+    topic_type: str = "Tactical Strategy"
+    verdict_badge: str = "EXECUTIVE RULING"
+    definitive_ruling: str
+    confidence_score: float = 0.85
+    deciding_factor: str
+    action_plan: list[str] = Field(default_factory=list)
+    primary_risk: str = ""
+    mitigation_strategy: str = ""
+    stakeholder_impacts: dict[str, str] = Field(default_factory=dict)
+
+
 # ── Generic Error ──
 class ErrorResponse(BaseModel):
     error: str

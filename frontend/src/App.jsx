@@ -759,6 +759,11 @@ export default function App() {
   const [isComputingSynthesis, setIsComputingSynthesis] = useState(false);
   const [synthesisError, setSynthesisError] = useState(null);
 
+  // Strategic Advisor & Executive Decision State
+  const [advisorCache, setAdvisorCache] = useState({});
+  const [isComputingAdvisor, setIsComputingAdvisor] = useState(false);
+  const [advisorError, setAdvisorError] = useState(null);
+
   // Real-time Execution State
   const [isStarting, setIsStarting] = useState(false);
   const [progressStatus, setProgressStatus] = useState('');
@@ -849,6 +854,36 @@ export default function App() {
       setIsComputingSynthesis(false);
     }
   };
+
+  const activeAdvisorData = currentDiscussionId ? advisorCache[currentDiscussionId] : null;
+
+  const handleFetchAdvisor = async (force = false) => {
+    if (!currentDiscussionId || isComputingAdvisor) return;
+    if (!force && advisorCache[currentDiscussionId]) return;
+
+    setIsComputingAdvisor(true);
+    setAdvisorError(null);
+    try {
+      const res = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}/advisor`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      const data = await res.json();
+      setAdvisorCache((prev) => ({ ...prev, [currentDiscussionId]: data }));
+    } catch (err) {
+      console.error('Advisor decision generation failed:', err);
+      setAdvisorError(err.message || 'Failed to generate strategic advisor decision.');
+    } finally {
+      setIsComputingAdvisor(false);
+    }
+  };
+
+  // Auto-fetch advisor decision when viewing a completed discussion if not yet cached
+  React.useEffect(() => {
+    if (currentDiscussionId && !advisorCache[currentDiscussionId] && !isComputingAdvisor) {
+      handleFetchAdvisor(false);
+    }
+  }, [currentDiscussionId]);
 
   // Auto-fetch synthesis when opening the Intelligence tab if not already cached
   React.useEffect(() => {
@@ -3150,6 +3185,284 @@ export default function App() {
                           : `Deliberation on "${currentDiscussion.topic}" synthesized across ${rawMsgs.length} messages with active perspective convergence.`)}
                     </p>
                   </div>
+                </div>
+
+                {/* ─── STRATEGIC ADVISOR LLM & DECISION DOSSIER ─── */}
+                <div
+                  style={{
+                    padding: '24px',
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'radial-gradient(ellipse at top left, color-mix(in srgb, var(--color-accent) 12%, transparent), color-mix(in srgb, var(--color-surface) 60%, transparent) 70%)',
+                    backdropFilter: 'blur(24px)',
+                    WebkitBackdropFilter: 'blur(24px)',
+                    border: '1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-divider))',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                  }}
+                >
+                  {/* Header Bar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '8px',
+                          background: 'color-mix(in srgb, var(--color-accent) 20%, transparent)',
+                          border: '1px solid color-mix(in srgb, var(--color-accent) 50%, transparent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--color-accent-300)',
+                        }}
+                      >
+                        <i className="ph ph-gavel" style={{ fontSize: '20px' }}></i>
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '18px', color: 'var(--color-neutral-100)', letterSpacing: '-0.01em' }}>
+                            Strategic Advisor Decision Dossier
+                          </h3>
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              background: 'color-mix(in srgb, var(--color-accent) 20%, transparent)',
+                              color: 'var(--color-accent-300)',
+                              border: '1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)',
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            {activeAdvisorData?.topic_type || 'EXECUTIVE ARBITER'}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '12px', color: 'var(--color-neutral-400)' }}>
+                          Authoritative technical ruling and actionable execution plan for "{currentDiscussion.topic}"
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleFetchAdvisor(true)}
+                      disabled={isComputingAdvisor}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '7px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-divider))',
+                        background: 'color-mix(in srgb, var(--color-surface) 80%, transparent)',
+                        color: 'var(--color-neutral-200)',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: isComputingAdvisor ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <i className={isComputingAdvisor ? 'ph ph-spinner ph-spin' : 'ph ph-arrows-clockwise'} style={{ fontSize: '14px', color: 'var(--color-accent-300)' }}></i>
+                      {isComputingAdvisor ? 'Adjudicating Debate...' : 'Re-Evaluate Ruling'}
+                    </button>
+                  </div>
+
+                  {isComputingAdvisor && !activeAdvisorData ? (
+                    <div style={{ padding: '36px', textAlign: 'center', color: 'var(--color-neutral-400)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                      <i className="ph ph-spinner ph-spin" style={{ fontSize: '28px', color: 'var(--color-accent-300)' }}></i>
+                      <span style={{ fontSize: '14px' }}>Evaluating conflicting peer arguments, stress-testing evidence, and formulating final decision...</span>
+                    </div>
+                  ) : activeAdvisorData ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                      {/* Hero Ruling Card */}
+                      <div
+                        style={{
+                          padding: '20px',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 14%, transparent), color-mix(in srgb, var(--color-surface) 80%, transparent))',
+                          border: '1px solid color-mix(in srgb, var(--color-accent) 45%, transparent)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                          boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                letterSpacing: '0.08em',
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                background: 'var(--color-accent)',
+                                color: '#002511',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {activeAdvisorData.verdict_badge || 'BINDING RULING'}
+                            </span>
+                            <span style={{ fontSize: '13px', color: 'var(--color-neutral-300)', fontWeight: 500 }}>
+                              Definitive Technical Verdict
+                            </span>
+                          </div>
+                          {activeAdvisorData.confidence_score != null && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-neutral-400)' }}>
+                              <span>Decision Confidence:</span>
+                              <strong style={{ color: 'var(--color-accent-300)', fontVariantNumeric: 'tabular-nums' }}>
+                                {Math.round(activeAdvisorData.confidence_score * 100)}%
+                              </strong>
+                            </div>
+                          )}
+                        </div>
+
+                        <p style={{ margin: 0, fontSize: '16px', fontWeight: 600, lineHeight: 1.55, color: 'var(--color-neutral-100)', letterSpacing: '-0.01em' }}>
+                          "{activeAdvisorData.definitive_ruling}"
+                        </p>
+                      </div>
+
+                      {/* Deciding Factor */}
+                      {activeAdvisorData.deciding_factor && (
+                        <div
+                          style={{
+                            padding: '14px 18px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid var(--color-divider)',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                          }}
+                        >
+                          <div style={{ padding: '6px', borderRadius: '6px', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', marginTop: '2px' }}>
+                            <i className="ph ph-lightning" style={{ fontSize: '16px' }}></i>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', color: '#fbbf24', textTransform: 'uppercase' }}>
+                              Core Deciding Factor
+                            </span>
+                            <span style={{ fontSize: '13.5px', color: 'var(--color-neutral-200)', lineHeight: 1.5 }}>
+                              {activeAdvisorData.deciding_factor}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 3-Step Action Plan */}
+                      {activeAdvisorData.action_plan?.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <i className="ph ph-check-square-offset" style={{ fontSize: '16px', color: 'var(--color-accent-300)' }}></i>
+                            <span style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--color-neutral-200)', textTransform: 'uppercase' }}>
+                              Actionable Directives (Execution Protocol)
+                            </span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '10px' }}>
+                            {activeAdvisorData.action_plan.map((step, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  padding: '14px 16px',
+                                  borderRadius: 'var(--radius-md)',
+                                  background: 'color-mix(in srgb, var(--color-surface) 75%, transparent)',
+                                  border: '1px solid var(--color-divider)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '8px',
+                                }}
+                              >
+                                <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--color-accent-300)', fontFamily: 'var(--font-heading)' }}>
+                                  DIRECTIVE {String(idx + 1).padStart(2, '0')}
+                                </span>
+                                <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, color: 'var(--color-neutral-300)' }}>
+                                  {step.replace(/^\d+\.\s*/, '')}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Risk & Mitigation Dual Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '12px' }}>
+                        {activeAdvisorData.primary_risk && (
+                          <div
+                            style={{
+                              padding: '14px 16px',
+                              borderRadius: 'var(--radius-md)',
+                              background: 'rgba(244, 63, 94, 0.05)',
+                              border: '1px solid rgba(244, 63, 94, 0.25)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f43f5e', fontSize: '11.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              <i className="ph ph-warning-circle" style={{ fontSize: '14px' }}></i>
+                              Primary Strategic Risk
+                            </div>
+                            <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>
+                              {activeAdvisorData.primary_risk}
+                            </p>
+                          </div>
+                        )}
+
+                        {activeAdvisorData.mitigation_strategy && (
+                          <div
+                            style={{
+                              padding: '14px 16px',
+                              borderRadius: 'var(--radius-md)',
+                              background: 'color-mix(in srgb, var(--color-accent) 6%, transparent)',
+                              border: '1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-accent-300)', fontSize: '11.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              <i className="ph ph-shield-check" style={{ fontSize: '14px' }}></i>
+                              Mitigation & Safeguard
+                            </div>
+                            <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>
+                              {activeAdvisorData.mitigation_strategy}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Stakeholder Impact Strip */}
+                      {activeAdvisorData.stakeholder_impacts && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '10px', paddingTop: '4px' }}>
+                          {activeAdvisorData.stakeholder_impacts.sporting_impact && (
+                            <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--color-divider)' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', fontWeight: 600 }}>On-Pitch Tactical</span>
+                              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--color-neutral-300)', lineHeight: 1.4 }}>{activeAdvisorData.stakeholder_impacts.sporting_impact}</p>
+                            </div>
+                          )}
+                          {activeAdvisorData.stakeholder_impacts.squad_impact && (
+                            <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--color-divider)' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', fontWeight: 600 }}>Squad & Hierarchy</span>
+                              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--color-neutral-300)', lineHeight: 1.4 }}>{activeAdvisorData.stakeholder_impacts.squad_impact}</p>
+                            </div>
+                          )}
+                          {activeAdvisorData.stakeholder_impacts.strategic_impact && (
+                            <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--color-divider)' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--color-neutral-500)', textTransform: 'uppercase', fontWeight: 600 }}>Institutional / Legacy</span>
+                              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--color-neutral-300)', lineHeight: 1.4 }}>{activeAdvisorData.stakeholder_impacts.strategic_impact}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-neutral-500)' }}>
+                      <span>No strategic advisor ruling has been computed for this deliberation yet. Click "Re-Evaluate Ruling" above to generate.</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* ─── LLM EXECUTIVE SYNTHESIS & AGENT DOSSIERS ─── */}
