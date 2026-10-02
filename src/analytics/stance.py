@@ -36,12 +36,18 @@ def extract_topic_poles(topic: str) -> tuple[str, str]:
 
 def get_embedding_model():
     """Load cached weights only. Never download a model during analytics."""
-    from sentence_transformers import SentenceTransformer
-    return SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
+    try:
+        from sentence_transformers import SentenceTransformer
+        return SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
+    except Exception:
+        return None
 
 
 def score_snapshot_with_embeddings(snapshot, topic: str = "", prev_stance=None,
                                    model=None, positive_pole=None, negative_pole=None):
+    model = model if model is not None else get_embedding_model()
+    if model is None:
+        return prev_stance
     if not positive_pole or not negative_pole:
         topic_str = str(topic or "Debate topic").strip()
         if " vs " in topic_str.lower():
@@ -69,8 +75,35 @@ def score_snapshot_with_embeddings(snapshot, topic: str = "", prev_stance=None,
     return round(max(-1.0, min(1.0, value)), 4)
 
 
+def _extract_self_reported_number(text: str) -> float | None:
+    """Extract an explicit numeric stance if present in text, e.g. '+0.7', '(-0.4)', 'Stance: -0.6'."""
+    if not text:
+        return None
+    patterns = [
+        r'\(([+-]?\d+(?:\.\d+)?)\)',
+        r'(?:stance|lean)[^:]*:\s*([+-]?\d+(?:\.\d+)?)',
+        r'^[^\w]*([+-]\d+(?:\.\d+)?)',
+        r'Camp\s+[AB]\s*\(?([+-]?\d+(?:\.\d+)?)\)?',
+        r'\b([+-]\d+\.\d+)\b',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            try:
+                val = float(m.group(1))
+                if math.isfinite(val) and -1.0 <= val <= 1.0:
+                    return round(val, 4)
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
 def _rule_score(text: str):
     """A conservative self-report heuristic; unclassified text is not neutral."""
+    explicit = _extract_self_reported_number(text)
+    if explicit is not None:
+        return explicit
+
     text = text.lower().replace("’", "'")
     text = re.sub(r"\b(?:don't|doesn't|didn't)\b", "not", text)
     # Negation immediately before a position verb; do not score the verb a second time.
@@ -110,7 +143,7 @@ def score_snapshots_with_llm(topic, snapshots, llm_client=None, positive_pole=No
         return {}
     if llm_client is None:
         from src.agent.llm import OpenAICompatibleLLM
-        llm_client = OpenAICompatibleLLM(max_tokens=2000, max_retries=0, pace_waits=())
+        llm_client = OpenAICompatibleLLM(max_tokens=2500, max_retries=2, pace_waits=(5.0,))
     scores = {}
     from collections import defaultdict
     agent_groups = defaultdict(list)
@@ -221,21 +254,23 @@ def score_snapshots_with_llm(topic, snapshots, llm_client=None, positive_pole=No
                 if value is not None:
                     received[key] = round(value, 4)
 
-        # For any missing keys or keys where value is None: fill from the local
-        # embedding projection. A failed embedding stays None -- never 0.0.
+        # For any missing keys or keys where value is None: fill from self-reported number
+        # first, then local embedding projection.
         batch_by_key = {(str(op['agent_id']), int(op['round_num'])): op for op in batch}
         for exp_key in expected:
             if exp_key not in received or received[exp_key] is None:
                 op_data = batch_by_key.get(exp_key, {})
-                try:
-                    fallback_val = score_snapshot_with_embeddings(
-                        op_data,
-                        topic=topic,
-                        positive_pole=positive_pole,
-                        negative_pole=negative_pole,
-                    )
-                except Exception:
-                    fallback_val = None
+                fallback_val = _extract_self_reported_number(str(op_data.get('stance', '') or op_data.get('raw_text', '')))
+                if fallback_val is None:
+                    try:
+                        fallback_val = score_snapshot_with_embeddings(
+                            op_data,
+                            topic=topic,
+                            positive_pole=positive_pole,
+                            negative_pole=negative_pole,
+                        )
+                    except Exception:
+                        fallback_val = None
                 if fallback_val is not None:
                     received[exp_key] = fallback_val
                 else:
@@ -301,7 +336,9 @@ def compute_opinion_trajectories(discussion_data, use_llm=False, llm_client=None
                     negative_pole=effective_neg_pole, model=model)
             previous = points[-1] if points else None
 
-            # Fall back to score_snapshot_with_embeddings if None
+            # Fall back to self-reported numeric stance, then score_snapshot_with_embeddings
+            if value is None:
+                value = _extract_self_reported_number(str(op.get('stance', '') or op.get('raw_text', '')))
             if value is None:
                 try:
                     value = score_snapshot_with_embeddings(
@@ -316,7 +353,7 @@ def compute_opinion_trajectories(discussion_data, use_llm=False, llm_client=None
                     value = previous.stance_value if previous and previous.stance_value is not None else 0.0
 
             if value is None:
-                value = 0.0
+                value = previous.stance_value if previous and previous.stance_value is not None else 0.0
             value = round(max(-1.0, min(1.0, float(value))), 4)
 
             delta = None

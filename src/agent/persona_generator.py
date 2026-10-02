@@ -21,9 +21,12 @@ from src.agent.persona_loader import load_persona
 logger = logging.getLogger(__name__)
 
 
+import unicodedata
+
 def _sanitize_id(name: str) -> str:
     """Create a clean lowercase snake_case identifier."""
-    cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", name.strip().lower())
+    normalized = unicodedata.normalize("NFKD", name).encode("ASCII", "ignore").decode("utf-8")
+    cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", normalized.strip().lower())
     return re.sub(r"_+", "_", cleaned).strip("_")
 
 
