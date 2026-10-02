@@ -112,15 +112,34 @@ def score_snapshots_with_llm(topic, snapshots, llm_client=None, positive_pole=No
         from src.agent.llm import OpenAICompatibleLLM
         llm_client = OpenAICompatibleLLM(max_tokens=2000, max_retries=0, pace_waits=())
     scores = {}
-    for start in range(0, len(snapshots), 4):
-        batch = [_snapshot_dict(op) for op in snapshots[start:start + 4]]
+    from collections import defaultdict
+    agent_groups = defaultdict(list)
+    for op in snapshots:
+        op_d = _snapshot_dict(op)
+        agent_groups[str(op_d.get('agent_id', ''))].append(op_d)
+
+    for aid in agent_groups:
+        agent_groups[aid].sort(key=lambda x: int(x.get('round_num', 0)))
+
+    agent_ids = list(agent_groups.keys())
+    batch_size_agents = 2
+    for i in range(0, len(agent_ids), batch_size_agents):
+        selected_aids = agent_ids[i:i + batch_size_agents]
+        batch = []
+        for aid in selected_aids:
+            batch.extend(agent_groups[aid])
+
         expected = {(str(op['agent_id']), int(op['round_num'])) for op in batch}
         payload = [{k: op.get(k, '') for k in ('agent_id', 'round_num', 'stance', 'reasoning')} for op in batch]
         prompt = (
-            f"Topic: {topic}\nPositive pole (+1): {positive_pole}\nNegative pole (-1): {negative_pole}\n"
-            "Score each snapshot relative to these poles. Return only a JSON array of objects with "
-            "agent_id, round_num, stance_value (finite number between -1 and 1, or null if unclear).\n"
-            + json.dumps(payload)
+            f"Topic: {topic}\nPositive pole (+1): {positive_pole}\nNegative pole (-1): {negative_pole}\n\n"
+            "Below is the chronological sequence of opinions delivered by analysts across debate rounds (sorted by analyst and round):\n"
+            + json.dumps(payload, indent=2) +
+            "\n\nSCORING INSTRUCTIONS:\n"
+            "Evaluate each snapshot relative to the poles on a continuous scale from -1.0 to +1.0.\n"
+            "- CRITICAL CHRONOLOGICAL TRAJECTORY SENSITIVITY: Track each analyst's stance evolution across rounds. Notice how their position shifts, softens, or concedes in response to peer arguments.\n"
+            "- Do NOT assign the exact same score across different rounds if an analyst calibrated their stance, conceded an opposing argument, or acknowledged dual factors between rounds. Subtle shifts (e.g. -0.9 -> -0.5 -> -0.2 -> +0.3 or +0.8 -> +0.6 -> +0.4) must be reflected.\n"
+            "- Score 0.0 only when a position is strictly 50/50 balanced; use continuous gradations (e.g. +0.7, +0.4, +0.2, -0.3, -0.6) to reflect changing weighting.\n"
         )
         template = [
             {
@@ -132,22 +151,8 @@ def score_snapshots_with_llm(topic, snapshots, llm_client=None, positive_pole=No
         ]
         prompt += (
             "\nOUTPUT CONTRACT:\n"
-            "Return exactly the following records. Copy agent_id and round_num and give evey agent its name "
-            "unchanged. Replace only stance_value with a number from -1 to 1, "
-            "or keep null when unclear. Return each record exactly once. "
-            "Do not add records, rename agents, or renumber rounds.\n"
+            "Return exactly the following records. Copy agent_id and round_num unchanged. Replace only stance_value with a number from -1 to 1, or keep null when unclear. Return each record exactly once.\n"
             + json.dumps(template)
-        )
-
-
-        prompt += (
-            "\nSCORING GUIDANCE:\n"
-            "Evaluate the complete stance AND reasoning against the exact poles. "
-            "Do not infer a position from the analyst's name or persona. "
-            "Score on a continuous scale from -1.0 (strongly aligned with negative pole) to +1.0 (strongly aligned with positive pole). "
-            "Acknowledge nuanced, weighted positions (e.g. +0.8, +0.6, +0.3, -0.4, -0.7) when the text blends tactical attribution with defensive mistakes or external factors. "
-            "Use zero (0.0) for an explicitly balanced or neutral position; use null when the position cannot be inferred. "
-            "Apply the same standard to every snapshot.\n"
         )
 
 

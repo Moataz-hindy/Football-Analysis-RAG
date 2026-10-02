@@ -10,6 +10,7 @@ import logging
 import os
 import math
 import re
+import random
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -38,7 +39,8 @@ def _env_int(name: str, default: int, override: int | None = None) -> int:
 
 
 def _env_pace_waits() -> tuple[float, ...]:
-    raw = os.environ.get("LLM_PACE_WAITS", "3,8,15")
+    # Extra retry cycles are opt-in; normal callers use one request retry ladder.
+    raw = os.environ.get("LLM_PACE_WAITS", "")
     return tuple(float(x) for x in raw.split(",") if x.strip())
 
 
@@ -106,6 +108,7 @@ class OpenAICompatibleLLM(LLMInterface):
         timeout: float | None = None,
         max_retries: int | None = None,
         pace_waits: tuple[float, ...] | None = None,
+        use_pacer: bool = True,
     ):
         api_key = api_key or os.environ.get("LLM_API_KEY", "").strip()
         base_url = base_url or os.environ.get("LLM_BASE_URL", "").strip()
@@ -119,18 +122,30 @@ class OpenAICompatibleLLM(LLMInterface):
         self._model = model
         self._temperature = _env_float("LLM_TEMPERATURE", 0.2, temperature)
         self._max_tokens = _env_int("LLM_MAX_TOKENS", 1024, max_tokens)
-        self._max_retries = _env_int("LLM_MAX_RETRIES", 3, max_retries)
-        self._retry_max_wait = _env_float("LLM_RETRY_MAX_WAIT_SECONDS", 120.0)
+        self._max_retries = _env_int("LLM_MAX_RETRIES", 8, max_retries)
+        self._retry_max_wait = _env_float("LLM_RETRY_MAX_WAIT_SECONDS", 300.0)
+        self._retry_wait_budget = _env_float("LLM_RETRY_WAIT_BUDGET_SECONDS", 600.0)
+        self._retry_delays = tuple(float(value.strip()) for value in os.environ.get(
+            "LLM_RETRY_DELAYS_SECONDS", "5,10,20,40,60,90,120,180"
+        ).split(",") if value.strip())
         # waits[i] is slept after pace attempt i; attempts = len(waits) + 1.
-        # An empty tuple means a single attempt and an immediate raise.
-        self._pace_waits = tuple(pace_waits) if pace_waits is not None else _env_pace_waits()
-        if self._max_retries < 0 or not math.isfinite(self._retry_max_wait) or self._retry_max_wait <= 0:
+        # Explicit retry limits also disable this outer ladder unless requested.
+        # An empty tuple leaves retries solely to _request_with_retry.
+        self._pace_waits = (tuple(pace_waits) if pace_waits is not None else
+                            () if max_retries is not None else _env_pace_waits())
+        self._use_pacer = use_pacer
+        if (self._max_retries < 0
+                or not math.isfinite(self._retry_max_wait) or self._retry_max_wait <= 0
+                or not math.isfinite(self._retry_wait_budget) or self._retry_wait_budget <= 0
+                or not self._retry_delays
+                or any(not math.isfinite(wait) or wait < 0
+                       for wait in (*self._retry_delays, *self._pace_waits))):
             raise ValueError("Invalid retry configuration")
         self._client = OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=_env_float("LLM_TIMEOUT_SECONDS", 60.0, timeout),
-            max_retries=0,  # Retry here once, instead of stacking SDK and adapter retries.
+            max_retries=0,  # The adapter owns retries; do not stack SDK retries.
             default_headers={"User-Agent": "Mozilla/5.0"},
         )
         self.last_response: Any = None       # usage / finish_reason, for debugging
@@ -159,6 +174,8 @@ class OpenAICompatibleLLM(LLMInterface):
         self,
         messages: list[dict[str, Any]],
         tools: list[ToolInterface] | None = None,
+        *,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not any(message.get("role") == "tool" for message in messages):
             self._emitted = []   # new task: forget the previous run's tool calls
@@ -169,6 +186,9 @@ class OpenAICompatibleLLM(LLMInterface):
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
+        if response_format is not None:
+            # Send structured-output requirements to the provider, not just the prompt.
+            kwargs["response_format"] = response_format
         if tools:
             kwargs["tools"] = [to_tool_schema(tool) for tool in tools]
             kwargs["tool_choice"] = "auto"
@@ -179,26 +199,25 @@ class OpenAICompatibleLLM(LLMInterface):
    
         response = None
         last_error: Exception | None = None
-        # Day-token quotas drip back over tens of minutes; the paced attempts
-        # dwell across the quota window instead of failing the run. The default
-        # ladder is five attempts with 60/300/480/600s waits.
+        # One cumulative sleep budget per generate(), including opt-in outer cycles.
+        remaining_wait = [self._retry_wait_budget]
         waits = self._pace_waits
         for _pace_attempt in range(len(waits) + 1):
-            _PACER.wait_for_slot()
+            if self._use_pacer:
+                _PACER.wait_for_slot()
             try:
-                response = self._request_with_retry(kwargs)
+                response = self._request_with_retry(kwargs, remaining_wait)
                 break
             except (RateLimitError, APIConnectionError, APIStatusError) as pace_error:
-                # An hourly/day quota 429 outruns any single retry budget;
-                # pacing retries spread the run across the quota window
-                # instead of failing the discussion.
                 last_error = pace_error
                 status = getattr(pace_error, "status_code", None)
                 transient = (isinstance(pace_error, (RateLimitError, APIConnectionError))
                              or (status is not None and (status >= 500 or status == 408)))
                 if not transient or _pace_attempt >= len(waits):
                     raise
-                time.sleep(waits[_pace_attempt])
+                delay = max(waits[_pace_attempt], self._retry_delay(pace_error, 0))
+                self._wait_before_retry(pace_error, delay, remaining_wait,
+                                        f"extra cycle {_pace_attempt + 1}/{len(waits)}")
         if response is None:
             raise last_error  # type: ignore[misc]
         self.last_response = response
@@ -212,7 +231,7 @@ class OpenAICompatibleLLM(LLMInterface):
         # raw SDK object stops a null content from becoming the string "None".
         return {"content": message.content or "", "tool_calls": calls}
 
-    def _request_with_retry(self, kwargs):
+    def _request_with_retry(self, kwargs, remaining_wait):
         for attempt in range(self._max_retries + 1):
             try:
                 return self._client.chat.completions.create(**kwargs)
@@ -220,22 +239,36 @@ class OpenAICompatibleLLM(LLMInterface):
                 transient = (isinstance(error, (RateLimitError, APIConnectionError))
                              or error.status_code >= 500 or error.status_code == 408)
                 if not transient or attempt == self._max_retries:
+                    if transient:
+                        logger.warning("Model %s exhausted %d retries (HTTP %s).",
+                                       self._model, self._max_retries,
+                                       getattr(error, "status_code", "connection/timeout"))
                     raise
                 delay = self._retry_delay(error, attempt)
-                if delay > self._retry_max_wait:
-                    # Rate-limit windows must not silently turn into hours of
-                    # waiting; clamp and keep retrying. Non-rate-limit delays
-                    # above budget still abort for a partial save.
-                    if not isinstance(error, RateLimitError):
-                        logger.warning("Provider delay exceeds retry budget; stopping for partial save.")
-                        raise
-                    delay = min(delay, 10.0)
-                logger.warning("Temporary model failure (%s). Retrying request %d/%d in %.1fs.",
-                               type(error).__name__, attempt + 1, self._max_retries, delay)
-                time.sleep(delay)
+                self._wait_before_retry(error, delay, remaining_wait,
+                                        f"request {attempt + 1}/{self._max_retries}")
 
-    @staticmethod
-    def _retry_delay(error, attempt):
+    def _wait_before_retry(self, error, delay, remaining_wait, label):
+        if delay > self._retry_max_wait or delay > remaining_wait[0]:
+            logger.warning(
+                "Model %s needs %.1fs before retry; per-wait limit %.1fs, "
+                "remaining wait budget %.1fs. Stopping retries.",
+                self._model, delay, self._retry_max_wait, remaining_wait[0],
+            )
+            raise error
+        # Positive jitter avoids synchronized retries without shortening Retry-After.
+        jitter = random.uniform(0, min(1.0, delay * 0.1))
+        delay = min(delay + jitter, self._retry_max_wait, remaining_wait[0])
+        remaining_wait[0] -= delay
+        logger.warning(
+            "Temporary model failure (%s, HTTP %s, model %s). Retrying %s in %.1fs "
+            "(%.1fs wait budget remaining).",
+            type(error).__name__, getattr(error, "status_code", "connection/timeout"),
+            self._model, label, delay, remaining_wait[0],
+        )
+        time.sleep(delay)
+
+    def _retry_delay(self, error, attempt):
         headers = getattr(getattr(error, "response", None), "headers", {})
         delay = None
         try:
@@ -252,14 +285,17 @@ class OpenAICompatibleLLM(LLMInterface):
         if delay is None:
             ms_match = re.search(r"(?:try again|retry)\s+in\s+([0-9]+(?:\.[0-9]+)?)\s*ms", str(error), re.I)
             if ms_match:
-                delay = (float(ms_match.group(1)) / 1000.0) + 0.15
+                delay = float(ms_match.group(1)) / 1000.0
             else:
                 s_match = re.search(r"(?:try again|retry)\s+in\s+([0-9]+(?:\.[0-9]+)?)\s*s", str(error), re.I)
                 if s_match:
-                    delay = float(s_match.group(1)) + 0.5
+                    delay = float(s_match.group(1))
+        window = min(self._retry_delays[min(attempt, len(self._retry_delays) - 1)],
+                     self._retry_max_wait)
         if delay is not None and math.isfinite(delay) and delay >= 0:
-            return delay
-        return float(min(2 ** min(attempt + 1, 6), 60))
+            # Honor both our recovery window and the provider's minimum delay.
+            return max(window, delay + 1.0)
+        return window
 
     def _repair_tool_messages(
         self,

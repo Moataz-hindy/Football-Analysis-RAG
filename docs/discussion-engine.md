@@ -1,12 +1,31 @@
 # Discussion Engine Architecture
 
-This document describes the multi-agent discussion architecture developed for Week 3 of the Football Analysis RAG project, detailing the components, data models, persistence format, and interaction protocols.
+How a multi-agent discussion is run, saved and reloaded: the orchestrator,
+the persisted JSON record, and run reproducibility. For who talks to whom, see
+[agent graph and routing](agent-graph-and-routing.md); for failure handling, see
+[reliability and checkpointing](reliability-and-checkpointing.md).
+
+## 0. How a run works
+
+1. **Choose agents.** The six specialist personas in `personas/*.yaml` (2–6 of
+   them), LLM-generated 3v3 camps (`--dynamic-personas`), or explicitly chosen
+   system/user personas (`--persona-ids`, `--camp-a-ids`, `--camp-b-ids`).
+2. **Build the graph** and a stateless `GraphRouter`.
+3. **Round 0 — opening statements.** Every agent gives an initial opinion.
+4. **Rounds 1…N.** Each agent receives the previous round's messages from its
+   graph neighbours and replies. Agents can call `knowledge_search`,
+   `web_search` and `calculator` during a turn.
+5. **Checkpoint after every completed turn** to `outputs/{discussion_id}.json`.
+
+Runs start from the CLI (`python -m src.discussion.run_discussion`) or from
+`POST /discussions`, which runs the same script as a background job (one at a
+time, with up to `DISCUSSION_QUEUE_DEPTH` jobs waiting, default 4).
 
 ---
 
-## 1. Persistent Discussion History (Section 4.6, 16, 17, 23, 30)
+## 1. Persistent Discussion History
 
-Every multi-agent discussion execution generates a persistent, self-contained record. This record allows the entire discussion flow to be reconstructed, inspected, and analyzed by the downstream Week 4 analytics engine.
+Every multi-agent discussion execution generates a persistent, self-contained record. This record allows the entire discussion flow to be reconstructed, inspected, and analyzed by the [analytics](analytics.md) pipeline.
 
 ### 1.1 Storage Format and Location
 
@@ -19,7 +38,7 @@ outputs/
 └── {discussion_id_2}.json
 ```
 
-- Each file name follows the pattern `{discussion_id}.json` using a UUID.
+- Each file name follows the pattern `{discussion_id}.json`. The CLI defaults to a UUID; the API generates IDs like `disc-0cc18aca`. IDs may only contain letters, digits, `_` and `-`.
 - `outputs/*.json` is ignored by git (`.gitignore`), while `outputs/.gitkeep` preserves the directory.
 - All writes use an atomic rename pattern (`.tmp` file followed by `os.replace`) to prevent corruption or partial files if a process is killed mid-write.
 
@@ -33,22 +52,35 @@ outputs/
     "discussion_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "topic": "Evaluate Japan's 5-4-1 low block against Spain in World Cup 2022",
     "num_rounds": 3,
-    "agent_ids": ["Tactical Analyst", "Statistical Analyst"],
+    "agent_ids": ["tactical_analyst", "statistical_analyst"],
     "graph": {
-      "Tactical Analyst": ["Statistical Analyst"],
-      "Statistical Analyst": ["Tactical Analyst"]
+      "tactical_analyst": ["statistical_analyst"],
+      "statistical_analyst": ["tactical_analyst"]
     },
-    "llm_model": "openai/gpt-oss-20b",
+    "llm_model": "<LLM_MODEL>",
     "llm_temperature": 0.2,
     "timestamp": "2026-09-07T14:00:00Z",
-    "metadata": {}
+    "metadata": {
+      "schema_version": 2,
+      "status": "completed",
+      "current_round": 3,
+      "last_completed_round": 3,
+      "persona_files": {"tactical_analyst": "personas/tactical_analyst.yaml"},
+      "dynamic_personas": false,
+      "camps": {},
+      "retrieval": "week1_pgvector_k6",
+      "llm_base_url": "<LLM_BASE_URL>",
+      "llm_max_tokens": 1024
+    }
   },
   "messages": [
     {
       "round_num": 1,
-      "sender_id": "Tactical Analyst",
-      "recipient_ids": ["Statistical Analyst"],
+      "sender_id": "tactical_analyst",
+      "recipient_ids": ["statistical_analyst"],
       "content": "Japan maintained horizontal compactness...",
+      "sentiment_score": 0.42,
+      "sentiment_label": "positive",
       "timestamp": "2026-09-07T14:01:00Z",
       "sources_used": [
         {
@@ -71,7 +103,7 @@ outputs/
   ],
   "opinions": [
     {
-      "agent_id": "Tactical Analyst",
+      "agent_id": "tactical_analyst",
       "round_num": 0,
       "stance": "High-risk but structurally sound defensive setup.",
       "reasoning": "Midfield spacing denied central penetration.",
@@ -79,11 +111,10 @@ outputs/
       "raw_text": "Initial opinion text...",
       "timestamp": "2026-09-07T14:00:05Z",
       "changed_from_previous": false,
-      "change_reason": "",
-      "metadata": {}
+      "change_reason": ""
     },
     {
-      "agent_id": "Tactical Analyst",
+      "agent_id": "tactical_analyst",
       "round_num": 1,
       "stance": "Confident the low block was net-positive.",
       "reasoning": "Transition moments punished Spain's high line, changing my assessment.",
@@ -91,8 +122,7 @@ outputs/
       "raw_text": "Round 1 updated analysis...",
       "timestamp": "2026-09-07T14:02:10Z",
       "changed_from_previous": true,
-      "change_reason": "Transition moments punished Spain's high line, changing my assessment.",
-      "metadata": {}
+      "change_reason": "Transition moments punished Spain's high line, changing my assessment."
     }
   ],
   "metadata": {
@@ -107,7 +137,7 @@ outputs/
 
 ---
 
-### 1.2.1 Opinion Evolution (Section 4.7)
+### 1.2.1 Opinion Evolution
 
 `opinions[]` doubles as the agent's opinion-evolution history: for a given
 `agent_id`, sorting its snapshots by `round_num` gives the initial opinion
@@ -161,7 +191,7 @@ configured `total_rounds`, not just a fixed count.
   path = save_discussion_from_state(
       state=state,
       router=router,
-      llm_model="qwen-3.6",
+      llm=llm,  # model and temperature are read from the adapter
       duration_seconds=elapsed,
   )
   ```
@@ -176,7 +206,7 @@ All persistence operations log through Python's standard `logging` library using
 - **WARNING**: Corrupted JSON files skipped during `list_discussions()`, missing non-critical metadata fields during reconstruction.
 - **ERROR**: File write failures, permission issues, JSON syntax errors, and schema validation failures with full exception traceback.
 
-## 2. Run Identity & Reproducibility (Section 4.8, 23)
+## 2. Run Identity & Reproducibility
 
 ### 2.1 Run identity
 
@@ -199,7 +229,7 @@ result = load_discussion_by_id("2026-09-09_japan-low-block")
 ### 2.2 Captured run configuration
 
 The persisted `config` block records everything needed to trace a run
-(Requirement 4.8 / 23):
+:
 
 | Field | Source of truth |
 |---|---|
@@ -229,8 +259,12 @@ python -m src.discussion.run_discussion                       # default topic, 3
 python -m src.discussion.run_discussion --discussion-id demo_run_1
 ```
 
-The script builds the six persona agents, runs the discussion with Week 1
+The script builds the six persona agents, runs the discussion with knowledge-base
 retrieval enabled, saves `outputs/{discussion_id}.json`, then reloads the
 record by ID and prints a verification summary (participants, rounds,
-messages, retrieval events, opinion changes). See README "Reproducible
-discussion runs" for the full reviewer workflow.
+messages, retrieval events, opinion changes).
+
+Other runner options: `--rounds`, `--agents` (2–6), `--output-dir`,
+`--personas-dir`, `--dynamic-personas`, `--force-regenerate`,
+`--persona-ids`, `--camp-a-ids`, `--camp-b-ids`, and `--overwrite` to replace
+an existing record with the same ID.

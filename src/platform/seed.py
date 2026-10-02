@@ -37,11 +37,11 @@ def seed_database_and_discussions():
     now_str = datetime.now(timezone.utc).isoformat()
 
     # ─────────────────────────────────────────────────────────────
-    # 1. Create Default Demo User & Profile: Marwan (Scout)
+    # 1. Create Default Demo User & Profile: User (Scout)
     # ─────────────────────────────────────────────────────────────
-    demo_email = "marwan@football.ai"
-    demo_user_id = "usr-demo-marwan"
-    demo_profile_id = "prof-demo-marwan"
+    demo_email = "user@football.ai"
+    demo_user_id = "usr-demo-user"
+    demo_profile_id = "prof-demo-user"
     pw_hash, salt = hash_password("password123")
 
     with get_db_cursor() as cur:
@@ -51,7 +51,7 @@ def seed_database_and_discussions():
             cur.execute(
                 """INSERT INTO users (id, email, password_hash, salt, display_name, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (demo_user_id, demo_email, pw_hash, salt, "Marwan", now_str, now_str),
+                (demo_user_id, demo_email, pw_hash, salt, "User", now_str, now_str),
             )
             cur.execute(
                 """INSERT INTO profiles (
@@ -62,7 +62,7 @@ def seed_database_and_discussions():
                 (
                     demo_profile_id,
                     demo_user_id,
-                    "Marwan",
+                    "User",
                     "scout",
                     "Player Recruitment & Positional Profiling",
                     "Professional",
@@ -79,7 +79,7 @@ def seed_database_and_discussions():
             cur.execute(
                 """INSERT INTO sessions (token, user_id, profile_id, created_at, expires_at)
                    VALUES (?, ?, ?, ?, ?)""",
-                ("demo-session-token-marwan", demo_user_id, demo_profile_id, now_str, "2030-01-01T00:00:00Z"),
+                ("demo-session-token-user", demo_user_id, demo_profile_id, now_str, "2030-01-01T00:00:00Z"),
             )
 
             # Insert sample persistent memories

@@ -1,5 +1,7 @@
 # Retrieval Evaluation
 
+A small labelled benchmark for the knowledge-base retriever (`src/rag/evaluate.py`).
+
 ## What is being evaluated
 
 The current system is a **dense vector RAG retriever**: it embeds a question with the configured OpenRouter embedding model, then uses PostgreSQL `pgvector` cosine distance to return the nearest fixed-size text chunks. It is not GraphRAG. The repository has no entity extraction, graph store, relationship traversal, or multi-hop retrieval path, so switching to GraphRAG would add infrastructure without evidence of a graph-shaped retrieval failure. This benchmark evaluates the existing retriever first.
@@ -16,11 +18,12 @@ At `k=5`, the evaluator records these metrics for every query:
 
 Run the live evaluation from the project root after PostgreSQL is populated and `.env` contains valid embedding settings:
 
-```powershell
-python src/rag/evaluate.py
+```bash
+python -m src.rag.evaluate            # k = 5
+python -m src.rag.evaluate -k 10 --output reports/evaluation_results.json
 ```
 
-The command writes the per-query retrievals and metrics to `docs/evaluation_results.json`. The result file is generated output and should be regenerated whenever the embedding model, chunking, or database contents change.
+By default the command writes the per-query retrievals and metrics to `docs/evaluation_results.json`. The result file is generated output and should be regenerated whenever the embedding model, chunking, or database contents change.
 
 ## Evaluation set
 
@@ -36,7 +39,7 @@ The command writes the per-query retrievals and metrics to `docs/evaluation_resu
 
 ## Recorded run and interpretation
 
-No live scores are recorded yet in this workspace. The run is currently blocked before retrieval because this shell has no Docker executable and the project has no `.env` file, so PostgreSQL and the embedding API cannot be reached. Recording fabricated rankings would invalidate the evaluation. Once the command runs, this section should report the macro-average values from `evaluation_results.json` and identify the lowest-scoring query families.
+No benchmark results are recorded yet (there is no `docs/evaluation_results.json`). Running it needs a populated PostgreSQL knowledge base and valid embedding settings (`OPENAI_API_KEY`, `OPENROUTER_MODEL`). After a run, record the macro-averaged Precision@5, Recall@5 and MRR here, with the date and embedding model, and name the lowest-scoring query families. Never record estimated numbers.
 
 Interpretation rules:
 

@@ -307,8 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     extra_meta = {}
     if args.dynamic_personas:
         extra_meta["dynamic_personas"] = True
-        if manifest:
-            extra_meta["camps"] = manifest
+    if manifest:
+        extra_meta["camps"] = manifest
 
     def checkpoint(state):
         save_discussion_from_state(
@@ -322,7 +322,12 @@ def main(argv: list[str] | None = None) -> int:
             duration_seconds=time.monotonic() - started,
         )
 
-    orchestrator = DiscussionOrchestrator(agents=agents, router=router, checkpoint=checkpoint)
+    orchestrator = DiscussionOrchestrator(
+        agents=agents,
+        router=router,
+        checkpoint=checkpoint,
+        camps=manifest,
+    )
 
     print(f"Discussion ID:   {discussion_id}")
     print(f"Agents:          {len(agents)}")

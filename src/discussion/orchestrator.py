@@ -38,8 +38,13 @@ class DiscussionRunError(RuntimeError):
 
 
 class DiscussionOrchestrator:
-    def __init__(self, agents: dict[str, Agent], router: GraphRouter,
-                 checkpoint: Callable[[DiscussionState], None] | None = None) -> None:
+    def __init__(
+        self,
+        agents: dict[str, Agent],
+        router: GraphRouter,
+        checkpoint: Callable[[DiscussionState], None] | None = None,
+        camps: dict | None = None,
+    ) -> None:
         graph_agent_ids = set(router.graph.graph.nodes)
         provided_agent_ids = set(agents)
 
@@ -56,6 +61,66 @@ class DiscussionOrchestrator:
         self.agents = dict(agents)
         self.router = router
         self.checkpoint = checkpoint
+        self.camps = camps
+
+    def _get_agent_camp_info(self, agent_id: str, state: DiscussionState) -> dict[str, str]:
+        """Resolve camp assignment, perspective name, and opening mandate for an agent."""
+        camps_data = self.camps
+        if isinstance(camps_data, dict) and "camps" in camps_data and isinstance(camps_data["camps"], dict):
+            camps_data = camps_data["camps"]
+
+        camp_a = camps_data.get("camp_a", {}) if isinstance(camps_data, dict) else {}
+        camp_b = camps_data.get("camp_b", {}) if isinstance(camps_data, dict) else {}
+
+        # 1. Collect Camp A members
+        a_members = set()
+        if "ids" in camp_a and isinstance(camp_a["ids"], list):
+            a_members.update(camp_a["ids"])
+        for role in ("coach", "fan", "pundit"):
+            if role in camp_a and camp_a[role]:
+                a_members.add(camp_a[role])
+
+        # 2. Collect Camp B members
+        b_members = set()
+        if "ids" in camp_b and isinstance(camp_b["ids"], list):
+            b_members.update(camp_b["ids"])
+        for role in ("coach", "fan", "pundit"):
+            if role in camp_b and camp_b[role]:
+                b_members.add(camp_b[role])
+
+        camp_a_name = str(camp_a.get("name") or "Camp A (Affirmative / Thesis)").strip()
+        camp_b_name = str(camp_b.get("name") or "Camp B (Counter / Antithesis)").strip()
+
+        # Fallback if no explicit camps or agent not in explicit camps
+        if agent_id not in a_members and agent_id not in b_members:
+            agent_list = list(state.agent_ids)
+            half = max(1, len(agent_list) // 2)
+            if agent_id in agent_list[:half]:
+                a_members.add(agent_id)
+            else:
+                b_members.add(agent_id)
+
+            if " vs " in state.topic.lower():
+                import re
+                parts = re.split(r"\s+vs\.?\s+", state.topic, flags=re.IGNORECASE)
+                if len(parts) >= 2 and parts[0].strip() and parts[1].strip():
+                    camp_a_name = f"In favor of {parts[0].strip()}"
+                    camp_b_name = f"In favor of {parts[1].strip()}"
+
+        if agent_id in a_members:
+            return {
+                "camp_key": "camp_a",
+                "camp_name": camp_a_name,
+                "opposing_camp_name": camp_b_name,
+                "camp_role": "affirmative",
+            }
+        else:
+            return {
+                "camp_key": "camp_b",
+                "camp_name": camp_b_name,
+                "opposing_camp_name": camp_a_name,
+                "camp_role": "counter",
+            }
 
 
 
@@ -151,17 +216,40 @@ class DiscussionOrchestrator:
 
         for agent_id in state.agent_ids:
             print(f"  -> Initial opinion: {agent_id}...", flush=True)
+            camp_info = self._get_agent_camp_info(agent_id, state)
+            camp_name = camp_info["camp_name"]
+            opposing_name = camp_info["opposing_camp_name"]
+            is_camp_a = (camp_info["camp_role"] == "affirmative")
+
+            if is_camp_a:
+                camp_mandate = (
+                    f"=== INITIAL OPENING LEAN: {camp_name.upper()} (CAMP A) ===\n"
+                    f"You enter this debate with a natural initial lean toward Camp A: \"{camp_name}\".\n"
+                    f"- In this opening round, articulate a reasoned, evidence-grounded opening perspective that highlights the merits of \"{camp_name}\" through your persona's distinctive tactical, analytical, or supporter lens.\n"
+                    f"- State a clear initial lean (a reasoned, non-dogmatic position, e.g. +0.6 to +0.8) while acknowledging the complexity of the match.\n"
+                    f"- Maintain intellectual agility: you are not locked into this view permanently. You are expected to evaluate counter-arguments and calibrate or adjust your position across rounds if peers present verified match data or compelling points."
+                )
+            else:
+                camp_mandate = (
+                    f"=== INITIAL OPENING LEAN: {camp_name.upper()} (CAMP B) ===\n"
+                    f"You enter this debate with a natural initial lean toward Camp B: \"{camp_name}\".\n"
+                    f"- In this opening round, articulate a reasoned, evidence-grounded opening perspective that highlights the merits of \"{camp_name}\" through your persona's distinctive tactical, analytical, or supporter lens.\n"
+                    f"- State a clear initial lean (a reasoned, non-dogmatic counter-position, e.g. -0.6 to -0.8), contrasting against the opposing premise of \"{opposing_name}\" without adopting rigid dogmatism.\n"
+                    f"- Maintain intellectual agility: you are not locked into this view permanently. You are expected to evaluate counter-arguments and calibrate or adjust your position across rounds if peers present verified match data or compelling points."
+                )
+
             task = (
                 f"Discussion topic: {state.topic}\n\n"
-                "Give your initial opinion from your persona's perspective.\n"
+                f"{camp_mandate}\n\n"
+                "Give your initial opening opinion from your persona's unique perspective, football philosophy, and priorities.\n"
                 "State a clear, assertive stance and provide evidence-based reasoning.\n"
                 "CRITICAL: Base your position strictly on concrete match facts, rules, and tactical realities. "
                 "Do NOT invent fictional match timelines, scores, or referee calls. "
                 "Do NOT confabulate tracking metrics, exact distance measurements (e.g. meter gaps), or unverified statistics. "
                 "Use the `web_search` or `knowledge_search` tool if you need to verify specific match details.\n"
                 "Provide your response in this format:\n"
-                "STANCE: Your position on the topic.\n"
-                "REASONING: Explain your position using available evidence and match insights.\n"
+                "STANCE: Your opening position on the topic.\n"
+                "REASONING: Explain your position using available evidence, match insights, and your persona's analytical lens.\n"
                 "SOURCES USED: Identify the sources you relied on."
             )
 

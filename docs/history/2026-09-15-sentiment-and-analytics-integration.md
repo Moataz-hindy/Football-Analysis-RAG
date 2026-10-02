@@ -1,5 +1,7 @@
 # Sentiment and analytics integration — 15 September 2026
 
+> **Historical record (2026-09-15).** This note describes the code and test results at that date and is kept for traceability. For current behaviour see [analytics](../analytics.md).
+
 This update selectively integrates Nada's sentiment commits through `3a004d1` on `main` and Moataz's analytics/tool work through `e8c1fe7` on `agent-graph`. It preserves the reliability behavior of `mixed-work`; it does not merge the older failure handlers from either source branch. The source branches and Hatem's original checkout remain untouched. No local Gemini embedding code or artifacts are included.
 
 ## Sentiment

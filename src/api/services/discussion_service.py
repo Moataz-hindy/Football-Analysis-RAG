@@ -280,6 +280,78 @@ def list_saved_discussions(
         reverse=True,
     )
 
+
+def delete_saved_discussion(
+    discussion_id: str,
+    output_dir: str | Path | None = None,
+) -> bool:
+    """Delete a saved discussion and associated analytics/cache records.
+
+    Raises:
+        ValueError: If discussion_id is invalid or tries directory traversal.
+        FileNotFoundError: If no record (disk or in-flight) exists for discussion_id.
+    """
+    if not isinstance(discussion_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]+", discussion_id
+    ):
+        raise ValueError(
+            "Discussion ID must contain only letters, numbers, "
+            "underscores, or hyphens."
+        )
+
+    directory = (
+        Path(output_dir) if output_dir is not None else OUTPUTS_DIR
+    ).resolve()
+
+    path = (directory / f"{discussion_id}.json").resolve()
+    if path.parent != directory:
+        raise ValueError("Discussion file must be inside the outputs directory.")
+
+    deleted = False
+
+    # 1. Remove discussion JSON file
+    if path.is_file():
+        try:
+            path.unlink()
+            deleted = True
+        except OSError as e:
+            logger.warning("Could not unlink %s: %s", path, e)
+
+    # 2. Remove associated analytics and metadata files if they exist
+    for pattern in (f"{discussion_id}_analytics.json", f"{discussion_id}_*.json"):
+        for extra_file in directory.glob(pattern):
+            if extra_file.is_file() and extra_file != path:
+                try:
+                    extra_file.unlink()
+                except OSError:
+                    pass
+
+    # 3. Clean up in-memory runtime records and LRU cache
+    with _status_lock:
+        if discussion_id in _runtime_status:
+            del _runtime_status[discussion_id]
+            deleted = True
+        if discussion_id in _pending_details:
+            del _pending_details[discussion_id]
+            deleted = True
+
+    _load_cached.cache_clear()
+
+    # 4. Remove database records if platform database is configured
+    try:
+        from src.platform.db import get_db_cursor
+        with get_db_cursor() as cur:
+            cur.execute("DELETE FROM user_discussions WHERE discussion_id = ?", (discussion_id,))
+            cur.execute("DELETE FROM profile_reports WHERE discussion_id = ?", (discussion_id,))
+    except Exception as e:
+        logger.debug("Database cleanup for %s skipped or failed: %s", discussion_id, e)
+
+    if not deleted:
+        raise FileNotFoundError(f"Discussion '{discussion_id}' not found.")
+
+    return True
+
+
 def _set_runtime_status(
     discussion_id: str,
     status: str,

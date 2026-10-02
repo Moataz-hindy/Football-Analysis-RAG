@@ -163,19 +163,26 @@ def init_db():
             conn.close()
             _PG_AVAILABLE = True
             logger.info("PostgreSQL multi-tenant schema initialized successfully.")
-            return
         except Exception as e:
             logger.warning("PostgreSQL connection failed (%s); falling back to embedded SQLite.", e)
             _PG_AVAILABLE = False
     else:
         _PG_AVAILABLE = False
 
-    # SQLite fallback
-    conn = sqlite3.connect(str(SQLITE_DB_PATH))
-    conn.execute("PRAGMA foreign_keys = ON")
-    _init_sqlite_schema(conn)
-    conn.close()
-    logger.info("Embedded SQLite platform database ready at %s", SQLITE_DB_PATH)
+    if not _PG_AVAILABLE:
+        # SQLite fallback
+        conn = sqlite3.connect(str(SQLITE_DB_PATH))
+        conn.execute("PRAGMA foreign_keys = ON")
+        _init_sqlite_schema(conn)
+        conn.close()
+        logger.info("Embedded SQLite platform database ready at %s", SQLITE_DB_PATH)
+
+    # Auto-seed default demo account so Fill Demo works out of the box
+    try:
+        from src.platform.auth import ensure_demo_user
+        ensure_demo_user("user@football.ai")
+    except Exception as e:
+        logger.warning("Auto-seed demo user skipped: %s", e)
 
 
 class PgCursorWrapper:

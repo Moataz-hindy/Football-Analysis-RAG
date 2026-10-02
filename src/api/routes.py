@@ -12,12 +12,12 @@ from fastapi.responses import RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from src.api.services.discussion_service import (
+    delete_saved_discussion,
     get_saved_discussion,
     list_saved_discussions,
 )
 from src.discussion.types import DiscussionResult
 from src.api.schemas import (
-    AdvisorDecisionResponse,
     AgentInfluenceOut,
     AgentInfo,
     AnalyticsResponse,
@@ -263,6 +263,40 @@ async def get_discussion(discussion_id: str):
     )
 
 
+# ── Delete Discussion ──
+@router.delete(
+    "/discussions/{discussion_id}",
+    status_code=status.HTTP_200_OK,
+    tags=["Discussions"],
+    summary="Delete a saved discussion from history",
+)
+async def delete_discussion(discussion_id: str):
+    """Delete a saved discussion file, associated analytics, and database records."""
+    try:
+        await run_in_threadpool(delete_saved_discussion, discussion_id)
+        return {
+            "status": "deleted",
+            "discussion_id": discussion_id,
+            "message": f"Discussion '{discussion_id}' successfully deleted.",
+        }
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Discussion '{discussion_id}' not found.",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.error("Error deleting discussion %s: %s", discussion_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting discussion: {exc}",
+        )
+
+
 # ── 6. Discussion Status ──
 @router.get(
     "/discussions/{discussion_id}/status",
@@ -421,39 +455,4 @@ async def get_or_compute_synthesis_route(discussion_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Synthesis failed: {exc}",
         )
-
-
-@router.post(
-    "/discussions/{discussion_id}/advisor",
-    response_model=AdvisorDecisionResponse,
-    tags=["Analytics"],
-    summary="Generate or retrieve strategic advisor decision and executive ruling",
-)
-@router.get(
-    "/discussions/{discussion_id}/advisor",
-    response_model=AdvisorDecisionResponse,
-    tags=["Analytics"],
-    summary="Get strategic advisor decision and executive ruling",
-)
-async def get_or_compute_advisor_route(discussion_id: str):
-    """Retrieve or generate LLM strategic advisor decision dossier."""
-    from src.api.services.analytics_service import get_discussion_advisor_decision
-
-    try:
-        return await get_discussion_advisor_decision(discussion_id)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Discussion '{discussion_id}' not found.",
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        )
-    except Exception as exc:
-        logger.exception("Advisor decision generation failed for %s", discussion_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Advisor decision failed: {exc}",
-        )
+

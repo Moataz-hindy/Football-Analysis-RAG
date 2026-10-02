@@ -116,32 +116,53 @@ export default function HistoryView({ savedDiscussions, setSavedDiscussions, loa
                   <span className="font-label-sm text-label-sm">
                     {disc.timestamp ? new Date(disc.timestamp).toLocaleString() : 'Recent Debate'}
                   </span>
-                  {isFailed ? (
+                  <div className="flex items-center gap-2">
                     <button
+                      type="button"
+                      title="Delete debate from history"
+                      aria-label="Delete debate"
                       onClick={(e) => {
                         e.stopPropagation();
-                        fetch('/discussions', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ topic: disc.topic, num_rounds: disc.num_rounds ?? 3 }),
-                        })
-                          .then((r) => {
-                            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                            return fetch('/discussions');
-                          })
-                          .then((res) => res.json())
-                          .then((d) => setSavedDiscussions(d.discussions || []))
-                          .catch(console.error);
+                        if (window.confirm(`Are you sure you want to delete discussion "${disc.discussion_id}"?`)) {
+                          fetch(`/discussions/${encodeURIComponent(disc.discussion_id)}`, { method: 'DELETE' })
+                            .then((r) => {
+                              if (!r.ok) throw new Error('Failed to delete discussion.');
+                              setSavedDiscussions((prev) => prev.filter((d) => d.discussion_id !== disc.discussion_id));
+                            })
+                            .catch((err) => alert(err.message));
+                        }
                       }}
-                      className="font-label-sm text-label-sm text-amber-400 hover:text-amber-300 uppercase font-bold flex items-center gap-1 cursor-pointer group-hover:translate-x-0.5 transition-transform"
+                      className="p-1 rounded text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[14px]">refresh</span> Retry Topic
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
                     </button>
-                  ) : (
-                    <span className="font-label-sm text-label-sm text-primary group-hover:translate-x-0.5 transition-transform flex items-center gap-1 font-semibold">
-                      Replay <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                    </span>
-                  )}
+                    {isFailed ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fetch('/discussions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ topic: disc.topic, num_rounds: disc.num_rounds ?? 3 }),
+                          })
+                            .then((r) => {
+                              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                              return fetch('/discussions');
+                            })
+                            .then((res) => res.json())
+                            .then((d) => setSavedDiscussions(d.discussions || []))
+                            .catch(console.error);
+                        }}
+                        className="font-label-sm text-label-sm text-amber-400 hover:text-amber-300 uppercase font-bold flex items-center gap-1 cursor-pointer group-hover:translate-x-0.5 transition-transform"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">refresh</span> Retry Topic
+                      </button>
+                    ) : (
+                      <span className="font-label-sm text-label-sm text-primary group-hover:translate-x-0.5 transition-transform flex items-center gap-1 font-semibold">
+                        Replay <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               );

@@ -1,16 +1,19 @@
-# Week 2–3 reliability fixes
+# Reliability, Retries and Checkpointing
 
-These changes strengthen the existing agents and discussion runner. They do not rebuild the knowledge base or implement Week 4 analytics.
+How agents and the discussion runner behave when searches, tools, the LLM
+provider or the disk fail, and what gets saved. The guiding rule: **a failure
+is recorded as a failure, never disguised as evidence or as a normal
+message.**
 
-## 1. A failed search is different from no results
+## 1. A failed search is not an empty result
 
 `src/rag/search.py` loads the project's root `.env` explicitly. A nearer `.env` under `src/rag` can no longer divert its file lookup. Existing shell environment variables still take priority.
 
-An ordinary search with zero rows returns `[]`. The search CLI now prints `No passages found` instead of just a question heading.
+An ordinary search with zero rows returns `[]`, and the search CLI prints `No passages found`.
 
-Missing embedding configuration, database login/connection problems, pgvector initialization problems, and embedding/query failures raise `RetrievalError`. The reusable functions no longer call `sys.exit()`. The CLI catches this error and exits with a failure status; agents pass it to the discussion's partial-history handler. Database connections opened by a search are closed even if embedding or SQL fails. Caller-owned connections remain the caller's responsibility.
+Missing embedding configuration, database login/connection problems, pgvector initialization problems, and embedding/query failures raise `RetrievalError`. The exception is a provider outage while embedding the query (timeouts, HTTP 408/429, 5xx): search then falls back to labelled keyword results (see [agent memory and retrieval](agent-memory-and-retrieval.md)). The reusable functions never call `sys.exit()`. The CLI catches this error and exits with a failure status; agents pass it to the discussion's partial-history handler. Database connections opened by a search are closed even if embedding or SQL fails. Caller-owned connections remain the caller's responsibility.
 
-The tool registry propagates execution errors instead of returning an error sentence as a successful result. A failed tool stops the current agent turn and the discussion. This deliberate policy prevents an infrastructure failure from being treated as evidence. Code that directly calls the registry must now handle exceptions.
+The tool registry propagates execution errors instead of returning an error sentence as a successful result. A failed tool stops the current agent turn and the discussion. This deliberate policy prevents an infrastructure failure from being treated as evidence. Code that directly calls the registry must handle exceptions.
 
 ## 2. Evidence and tool activity survive saving
 
@@ -18,7 +21,7 @@ Each attempt records its name, arguments, result, timestamp, status, error, and 
 
 The agent retains document ID, chunk index, title, URL, text, and similarity score through the retrieval-tool path. The initial response includes evidence from both its automatic search and subsequent knowledge-search calls. Duplicate source appearances are retained to preserve the event trail.
 
-The existing discussion JSON shape is extended through its metadata fields:
+The discussion JSON records this in its metadata fields:
 
 | JSON location | Meaning |
 |---|---|
@@ -33,9 +36,9 @@ The existing discussion JSON shape is extended through its metadata fields:
 
 Failed turns are not fabricated as normal messages or opinion snapshots. Their events are stored separately. `total_retrieval_events` counts knowledge searches attached to completed messages; failed-turn attempts must be inspected in `failed_turns`. A successful empty search is still a search event, so a positive event count alone does not prove evidence was found or used.
 
-Existing files can still be loaded; missing new metadata stays absent. New records do not retroactively repair old evidence. Source lists record evidence supplied to the agent, not proof that every passage was cited or used correctly. Read the final response to verify actual use.
+Older records without these fields still load; the missing metadata stays absent. Source lists record evidence supplied to the agent, not proof that every passage was cited or used correctly. Read the final response to verify actual use.
 
-## 3. Memory uses the chat model
+## 3. Memory summaries never drop turns on failure
 
 `ConversationMemory` accepts a chat adapter. The full runner supplies its configured adapter; other callers lazily create `OpenAICompatibleLLM`, using the `LLM_*` settings rather than the embedding model.
 
@@ -56,7 +59,7 @@ Only the model request is retried. Already executed tools and completed agent re
 
 The full runner atomically saves after each completed agent response, including initial opinions. Thus every completed round is saved as well. Its record status becomes `completed`, `failed_partial`, or `interrupted` when the runner finishes or handles a turn failure/Ctrl+C. A hard process kill leaves the last checkpoint marked `running`; an in-flight response may be lost. Disk errors stop execution; the last successfully replaced file remains intact if the next atomic write fails.
 
-Checkpointing is preservation for inspection, not automatic resumption. A subsequent run starts fresh. The runner rejects an existing discussion ID to prevent an accidental restart overwriting prior history. IDs use letters, digits, underscores and hyphens. The low-level save function intentionally replaces the current run's checkpoint.
+Checkpointing is preservation for inspection, not automatic resumption. A subsequent run starts fresh. The runner rejects an existing discussion ID so a restart cannot overwrite earlier history, unless you pass `--overwrite`. IDs use letters, digits, underscores and hyphens. The low-level save function intentionally replaces the current run's checkpoint.
 
 The persistence bridge also preserves an explicit temperature of zero and serializes graph wrappers without confusing NetworkX's metadata with the graph itself.
 
@@ -70,6 +73,6 @@ python -m pytest tests -q
 
 The regression tests simulate unavailable databases, empty searches, tool failures, memory failures, rate limits, exhausted retries, interruptions and disk-write failure. A full fake six-agent run checks 24 messages, 24 opinions, every checkpoint, source metadata and separate calculator events. Network/database access is blocked in the new regression tests; they spend no API tokens.
 
-The live Week 3 demonstration still requires a populated, consistent knowledge base and working provider credentials. Do not interpret an offline test pass as proof of factual quality or successful live retrieval.
+A live discussion still needs a populated knowledge base and working provider credentials. An offline test pass is not proof of factual quality or of successful live retrieval.
 
-Verified after these changes: **124 tests passed** (the original 88 plus 36 regression cases), using the existing `temporaldev` environment. No live model or database calls were made.
+Relevant tests: `tests/test_week3_reliability.py`, `tests/test_persistence.py`, `tests/test_discussion_orchestrator.py`.

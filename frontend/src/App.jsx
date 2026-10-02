@@ -6,6 +6,8 @@ import AuthModal from './components/AuthModal';
 import OnboardingModal from './components/OnboardingModal';
 import ProfileModal from './components/ProfileModal';
 import PersonaManagerModal from './components/PersonaManagerModal';
+import AdvisorPanel from './components/AdvisorPanel';
+import SharedEvidenceBrief from './components/SharedEvidenceBrief';
 // Agent order the 2-6 agent presets draw from; mirrors the backend roster.
 const AGENT_ROSTER = [
   'tactical_analyst',
@@ -649,13 +651,13 @@ export default function App() {
     fetchMe();
   }, [token]);
 
-  // Instant Demo Login (Marwan - Scout Profile)
+  // Instant Demo Login (User - Scout Profile)
   const handleDemoLogin = async () => {
     try {
       const res = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'marwan@football.ai', password: 'password123' }),
+        body: JSON.stringify({ email: 'user@football.ai', password: 'password123' }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -670,13 +672,13 @@ export default function App() {
       console.warn('Demo login API fallback:', err);
     }
     // Fallback if backend auth service is offline or in mock
-    const fallbackToken = 'demo-session-token-marwan';
+    const fallbackToken = 'demo-session-token-user';
     localStorage.setItem('touchline_token', fallbackToken);
     setToken(fallbackToken);
-    setUser({ id: 'usr-demo-marwan', email: 'marwan@football.ai', display_name: 'Marwan' });
+    setUser({ id: 'usr-demo-user', email: 'user@football.ai', display_name: 'User' });
     setProfile({
-      id: 'prof-demo-marwan',
-      display_name: 'Marwan',
+      id: 'prof-demo-user',
+      display_name: 'User',
       profile_type: 'scout',
       football_focus: 'Player Recruitment & Positional Profiling',
       experience_level: 'Professional',
@@ -864,12 +866,15 @@ export default function App() {
     setIsComputingAdvisor(true);
     setAdvisorError(null);
     try {
-      const res = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}/advisor`, {
+      const res = await fetch(`/discussions/${encodeURIComponent(currentDiscussionId)}/advisor/decision`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retry_failed: force }),
       });
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
       const data = await res.json();
-      setAdvisorCache((prev) => ({ ...prev, [currentDiscussionId]: data }));
+      const decisionData = data.decision || data;
+      setAdvisorCache((prev) => ({ ...prev, [currentDiscussionId]: decisionData }));
     } catch (err) {
       console.error('Advisor decision generation failed:', err);
       setAdvisorError(err.message || 'Failed to generate strategic advisor decision.');
@@ -928,6 +933,42 @@ export default function App() {
       console.error('Failed to list discussions:', e);
     }
     return [];
+  };
+
+  const [deletingDiscussionId, setDeletingDiscussionId] = useState(null);
+  const [deleteModalTarget, setDeleteModalTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
+
+  const confirmDeleteDiscussion = async () => {
+    if (!deleteModalTarget) return;
+    const discussionId = deleteModalTarget.discussion_id;
+    setDeletingDiscussionId(discussionId);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/discussions/${encodeURIComponent(discussionId)}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to delete discussion.');
+      }
+
+      setSavedDiscussions((prev) => prev.filter((d) => d.discussion_id !== discussionId));
+
+      if (currentDiscussionId === discussionId) {
+        setCurrentDiscussionId(null);
+        setCurrentDiscussion(null);
+        setCurrentAnalytics(null);
+        setCursor(0);
+      }
+      setDeleteModalTarget(null);
+    } catch (err) {
+      console.error('Delete discussion error:', err);
+      setDeleteError(err.message || 'Failed to delete discussion.');
+    } finally {
+      setDeletingDiscussionId(null);
+    }
   };
 
   useEffect(() => {
@@ -2435,6 +2476,14 @@ export default function App() {
             )}
 
             {/* Active Deliberation Glass Container */}
+            <SharedEvidenceBrief brief={currentDiscussion?.metadata?.shared_evidence} />
+            {currentDiscussion && (
+              <AdvisorPanel
+                key={currentDiscussion.discussion_id}
+                discussion={currentDiscussion}
+                status={currentDiscussionStatus}
+              />
+            )}
             {currentDiscussion && (
               <div
                 style={{
@@ -2997,43 +3046,82 @@ export default function App() {
                     transition: 'border-color .15s ease',
                   }}
                 >
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    <span className="tag tag-neutral">{h.discussion_id}</span>
-                    <span className="tag tag-accent">{h.num_rounds || 3} Rounds</span>
-                    {h.status === 'queued' ? (
-                      <span
-                        className="tag"
-                        style={{
-                          color: 'var(--color-accent-300, #38bdf8)',
-                          borderColor: 'var(--color-accent-400, #0284c7)',
-                          background: 'color-mix(in srgb, var(--color-accent, #0284c7) 15%, transparent)',
-                        }}
-                      >
-                        Queued in Worker
-                      </span>
-                    ) : h.status === 'running' ? (
-                      <span
-                        className="tag"
-                        style={{
-                          color: '#4ade80',
-                          borderColor: '#22c55e',
-                          background: 'color-mix(in srgb, #22c55e 15%, transparent)',
-                        }}
-                      >
-                        Deliberating Live
-                      </span>
-                    ) : (h.num_messages === 0 || h.status === 'failed') ? (
-                      <span
-                        className="tag"
-                        style={{
-                          color: 'var(--color-amber-300, #fbbf24)',
-                          borderColor: 'var(--color-amber-400, #f59e0b)',
-                          background: 'color-mix(in srgb, var(--color-amber-500, #f59e0b) 12%, transparent)',
-                        }}
-                      >
-                        Failed / No messages recorded
-                      </span>
-                    ) : null}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', flex: 1 }}>
+                      <span className="tag tag-neutral">{h.discussion_id}</span>
+                      <span className="tag tag-accent">{h.num_rounds || 3} Rounds</span>
+                      {h.status === 'queued' ? (
+                        <span
+                          className="tag"
+                          style={{
+                            color: 'var(--color-accent-300, #38bdf8)',
+                            borderColor: 'var(--color-accent-400, #0284c7)',
+                            background: 'color-mix(in srgb, var(--color-accent, #0284c7) 15%, transparent)',
+                          }}
+                        >
+                          Queued in Worker
+                        </span>
+                      ) : h.status === 'running' ? (
+                        <span
+                          className="tag"
+                          style={{
+                            color: '#4ade80',
+                            borderColor: '#22c55e',
+                            background: 'color-mix(in srgb, #22c55e 15%, transparent)',
+                          }}
+                        >
+                          Deliberating Live
+                        </span>
+                      ) : (h.num_messages === 0 || h.status === 'failed') ? (
+                        <span
+                          className="tag"
+                          style={{
+                            color: 'var(--color-amber-300, #fbbf24)',
+                            borderColor: 'var(--color-amber-400, #f59e0b)',
+                            background: 'color-mix(in srgb, var(--color-amber-500, #f59e0b) 12%, transparent)',
+                          }}
+                        >
+                          Failed / No messages recorded
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <button
+                      type="button"
+                      title="Delete conversation from history"
+                      aria-label="Delete conversation from history"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteError(null);
+                        setDeleteModalTarget(h);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: 'var(--radius-md, 8px)',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        color: '#f87171',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        flexShrink: 0,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.28)';
+                        e.currentTarget.style.borderColor = '#ef4444';
+                        e.currentTarget.style.color = '#ffffff';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)';
+                        e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                        e.currentTarget.style.color = '#f87171';
+                      }}
+                    >
+                      <i className="ph ph-trash" style={{ fontSize: '15px' }}></i>
+                    </button>
                   </div>
                   <h3
                     style={{
@@ -4326,6 +4414,120 @@ export default function App() {
         onRemovePersonaFromArena={handleRemovePersonaFromArena}
         onPersonasLoaded={registerCustomPersonas}
       />
+
+      {/* ── Custom Obsidian Neon Delete Confirmation Modal ── */}
+      {deleteModalTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+          onClick={() => {
+            if (!deletingDiscussionId) setDeleteModalTarget(null);
+          }}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-[#0c1220] border border-white/[0.1] shadow-2xl p-6 sm:p-7 flex flex-col space-y-5"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px -5px rgba(239, 68, 68, 0.15)',
+            }}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                if (!deletingDiscussionId) setDeleteModalTarget(null);
+              }}
+              disabled={Boolean(deletingDiscussionId)}
+              className="absolute top-5 right-5 text-neutral-400 hover:text-white transition-colors cursor-pointer disabled:opacity-40"
+              aria-label="Close delete modal"
+            >
+              <i className="ph ph-x text-xl"></i>
+            </button>
+
+            {/* Header Icon + Brand Subtitle */}
+            <div className="flex items-start gap-3.5">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#ef4444',
+                  boxShadow: '0 0 20px rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                <i className="ph ph-trash text-2xl"></i>
+              </div>
+              <div className="flex flex-col space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_#ef4444]"></span>
+                  <span className="font-mono text-[11px] font-bold text-red-400 uppercase tracking-wider">
+                    Permanent Archive Deletion
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold text-white tracking-tight">
+                  Delete Conversation?
+                </h3>
+              </div>
+            </div>
+
+            {/* Description */}
+            <p className="text-[13.5px] text-neutral-300 leading-relaxed">
+              Are you sure you want to delete this recorded deliberation? This will permanently remove its transcript, multi-agent messages, and opinion trajectory metrics.
+            </p>
+
+            {/* Targeted Deliberation Snippet Box */}
+            <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] flex flex-col space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-0.5 rounded font-mono text-[11px] font-bold bg-white/[0.06] text-neutral-300 border border-white/[0.08]">
+                  {deleteModalTarget.discussion_id}
+                </span>
+                <span className="text-[11px] text-neutral-400 font-mono">
+                  {deleteModalTarget.num_rounds || 3} Rounds • {deleteModalTarget.num_messages || 0} messages
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-white line-clamp-2">
+                {deleteModalTarget.topic}
+              </p>
+            </div>
+
+            {/* Error banner if deletion failed */}
+            {deleteError && (
+              <div className="p-3 rounded-lg bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-medium flex items-center gap-2">
+                <i className="ph ph-warning-circle text-base flex-shrink-0"></i>
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={Boolean(deletingDiscussionId)}
+                onClick={() => setDeleteModalTarget(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-neutral-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(deletingDiscussionId)}
+                onClick={confirmDeleteDiscussion}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 active:scale-95 shadow-[0_0_20px_rgba(239,68,68,0.45)] transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {deletingDiscussionId ? (
+                  <>
+                    <i className="ph ph-spinner ph-spin text-sm"></i>
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="ph ph-trash text-sm"></i>
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

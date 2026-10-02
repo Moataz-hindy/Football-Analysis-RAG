@@ -1,8 +1,7 @@
 # Prompt Design
 
-This document covers the prompt-engineering piece of Week 2: how persona,
-memory, retrieved knowledge, and tool results reach the LLM, and why the
-prompts are structured the way they are.
+How persona, memory, retrieved knowledge and tool results reach the LLM, and
+why the prompts are structured the way they are.
 
 Code lives in `src/agent/prompts/`:
 - `templates.py` — shared building blocks (persona/memory/sources formatting)

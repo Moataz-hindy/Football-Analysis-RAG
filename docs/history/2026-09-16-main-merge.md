@@ -1,5 +1,7 @@
 # Main integration — 16 September 2026
 
+> **Historical record (2026-09-16).** This note describes the code and test results at that date and is kept for traceability. For current behaviour see [analytics](../analytics.md).
+
 Merged main at 9b15559 into mixed-work at fe70998. The backup branch
 backup/mixed-work-before-main-20260916 preserves the pre-merge tip.
 

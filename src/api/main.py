@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from src.api.routes import router
+from src.advisor.routes import router as advisor_router
 from src.api.services.discussion_service import(
     start_discussion_worker,
     shutdown_discussion_worker
@@ -349,6 +350,7 @@ app.mount(FRONTEND_MOUNT, StaticFiles(directory=frontend_dir, html=True), name="
 # ── Mount Routers ──
 app.include_router(router)
 app.include_router(platform_router)
+app.include_router(advisor_router)
 
 
 if __name__ == "__main__":

@@ -123,9 +123,124 @@ def register_user(email: str, password: str, display_name: str) -> Tuple[UserOut
     return user, profile, token
 
 
+DEMO_ACCOUNTS = {
+    "user@football.ai": {
+        "display_name": "User",
+        "user_id": "usr-demo-user",
+        "profile_id": "prof-demo-user",
+        "session_token": "demo-session-token-user",
+    },
+    "demo@football.ai": {
+        "display_name": "Demo User",
+        "user_id": "usr-demo-default",
+        "profile_id": "prof-demo-default",
+        "session_token": "demo-session-token-default",
+    },
+    "marwan@football.ai": {
+        "display_name": "User",
+        "user_id": "usr-demo-marwan",
+        "profile_id": "prof-demo-marwan",
+        "session_token": "demo-session-token-marwan",
+    },
+}
+
+
+def ensure_demo_user(email: str = "user@football.ai") -> Tuple[str, str, str]:
+    """Ensure the specified demo user, profile, and active session exist in the database."""
+    import json
+    clean_email = email.strip().lower()
+    config = DEMO_ACCOUNTS.get(
+        clean_email,
+        {
+            "display_name": "User",
+            "user_id": "usr-demo-user",
+            "profile_id": "prof-demo-user",
+            "session_token": "demo-session-token-user",
+        },
+    )
+
+    user_id = config["user_id"]
+    profile_id = config["profile_id"]
+    display_name = config["display_name"]
+    token = config["session_token"]
+    now_str = datetime.now(timezone.utc).isoformat()
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=3650)).isoformat()
+    pw_hash, salt = hash_password("password123")
+
+    with get_db_cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
+        existing_user = cur.fetchone()
+
+        if not existing_user:
+            cur.execute(
+                """INSERT INTO users (id, email, password_hash, salt, display_name, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, clean_email, pw_hash, salt, display_name, now_str, now_str),
+            )
+            cur.execute(
+                """INSERT INTO profiles (
+                       id, user_id, display_name, profile_type, football_focus, experience_level,
+                       preferred_analysis_style, preferred_report_type, favorite_competitions,
+                       favorite_teams, favorite_analysis_areas, created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    profile_id,
+                    user_id,
+                    display_name,
+                    "scout",
+                    "Player Recruitment & Positional Profiling",
+                    "Professional",
+                    "Statistical & Quantitative",
+                    "Scout Report",
+                    json.dumps(["FIFA World Cup", "UEFA Champions League", "Premier League", "Copa Libertadores"]),
+                    json.dumps(["Argentina", "Manchester City", "Arsenal", "Real Madrid"]),
+                    json.dumps(["Tactical Compactness", "Pressing Resistance", "Expected Threat (xT)", "Transition Timing"]),
+                    now_str,
+                    now_str,
+                ),
+            )
+            # Add initial sample memories
+            sample_memories = [
+                ("preference", "Analysis Tone", "Prefers concrete structural mechanics over speculative fan banter", "explicit", 1.0),
+                ("preference", "Preferred Detail", "Demands expected threat (xT) and progressive carry stats alongside spatial maps", "explicit", 1.0),
+                ("football_interest", "Scouting Focus", "Prioritizes U23 inverted wingers and press-resistant deep pivots", "explicit", 1.0),
+                ("report_preference", "Report Format", "Requires explicit risk factors and squad integration recommendations", "explicit", 1.0),
+                ("interaction_pattern", "Recurring Topic", "Frequently investigates defensive rest structure in high blocks", "inferred", 0.85),
+            ]
+            for m_type, key, val, src, conf in sample_memories:
+                m_id = f"mem-{uuid4().hex[:12]}"
+                cur.execute(
+                    """INSERT INTO profile_memory (id, profile_id, memory_type, key, value, source, confidence, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (m_id, profile_id, m_type, key, val, src, conf, now_str, now_str),
+                )
+        else:
+            u_dict = dict(existing_user)
+            user_id = u_dict["id"]
+            cur.execute("SELECT id FROM profiles WHERE user_id = ?", (user_id,))
+            p_row = cur.fetchone()
+            if p_row:
+                profile_id = dict(p_row)["id"]
+
+        cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        cur.execute(
+            """INSERT INTO sessions (token, user_id, profile_id, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token, user_id, profile_id, now_str, expires_at),
+        )
+
+    return user_id, profile_id, token
+
+
 def login_user(email: str, password: str) -> Tuple[UserOut, ProfileOut, str]:
     """Authenticate credentials and generate a secure session token."""
     clean_email = email.strip().lower()
+
+    if clean_email in DEMO_ACCOUNTS and password == "password123":
+        try:
+            ensure_demo_user(clean_email)
+        except Exception as e:
+            logger.warning("Could not auto-provision demo user: %s", e)
 
     with get_db_cursor() as cur:
         cur.execute(

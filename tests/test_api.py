@@ -250,3 +250,44 @@ def test_running_discussion_is_retrievable_immediately(client: TestClient, monke
             break
         time.sleep(0.05)
 
+
+def test_delete_discussion(client: TestClient, tmp_path):
+    """DELETE /discussions/{id} should delete a saved discussion and return 200."""
+    import json
+    from pathlib import Path
+
+    test_disc_id = "test-del-disc-001"
+    output_dir = Path("outputs")
+    output_dir.mkdir(exist_ok=True)
+    test_file = output_dir / f"{test_disc_id}.json"
+    dummy_data = {
+        "config": {
+            "discussion_id": test_disc_id,
+            "topic": "Test Debate for Deletion",
+            "num_rounds": 1,
+            "agent_ids": ["tactical_analyst", "fan_analyst"],
+            "graph": {},
+            "timestamp": "2026-10-02T10:00:00Z",
+        },
+        "messages": [],
+        "opinions": [],
+        "metadata": {},
+    }
+    test_file.write_text(json.dumps(dummy_data), encoding="utf-8")
+    assert test_file.exists()
+
+    # 1. Successful deletion
+    resp = client.delete(f"/discussions/{test_disc_id}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "deleted"
+    assert resp.json()["discussion_id"] == test_disc_id
+    assert not test_file.exists()
+
+    # 2. 404 on deleting non-existent discussion
+    resp404 = client.delete(f"/discussions/{test_disc_id}")
+    assert resp404.status_code == 404
+
+    # 3. 422 on invalid id format
+    resp422 = client.delete("/discussions/invalid..name!!")
+    assert resp422.status_code == 422
+

@@ -1,6 +1,7 @@
 # Week 4: Tasks 1, 2 & 3 — Opinion Dynamics, Agreement & Influence
 
-**Integration update:** See [sentiment and analytics](sentiment_and_analytics.md) for current behavior and validation. This document records the earlier implementation.
+> **Superseded design draft (2026-09-14).** Written before the analytics layer was finished. Several details differ from the shipped code: the default scorer is rule-based rather than the LLM, and the default influence metric is a Pearson correlation. See [analytics](../analytics.md) for current behaviour.
+
 
 This document defines the mathematical models, schemas, and architecture for **Tasks 1, 2, and 3** of the Week 4 Analytics Layer:
 1. **Task 1**: Per-Agent Opinion Change Across Rounds

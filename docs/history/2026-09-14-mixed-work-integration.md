@@ -1,6 +1,6 @@
 # mixed-work integration
 
-**Integration update:** See [sentiment and analytics](sentiment_and_analytics.md) for current behavior and validation. This document records the earlier implementation.
+> **Historical record (2026-09-14).** This note describes the code and test results at that date and is kept for traceability. For current behaviour see [agent memory and retrieval](../agent-memory-and-retrieval.md) and [reliability and checkpointing](../reliability-and-checkpointing.md).
 
 This branch combines Hatem's committed `week3-integrated` at `b41713e` with Moataz's `agent-graph` at `08c4003`. It was prepared in a separate checkout. Neither source branch was changed.
 

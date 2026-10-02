@@ -146,7 +146,7 @@ export default function AuthModal({
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. Marwan"
+                placeholder="e.g. User"
                 className="w-full px-3.5 py-2.5 rounded-lg bg-[#060a12] border border-white/[0.1] text-white text-sm focus:outline-none focus:border-[#00f59b] focus:ring-1 focus:ring-[#00f59b] transition-all"
               />
             </div>
@@ -192,13 +192,14 @@ export default function AuthModal({
           <button
             type="button"
             onClick={() => {
-              setEmail('marwan@football.ai');
+              setEmail('user@football.ai');
               setPassword('password123');
               setMode('login');
+              setError(null);
             }}
-            className="text-[#00f59b] hover:underline font-mono"
+            className="text-[#00f59b] hover:underline font-mono cursor-pointer"
           >
-            Fill Demo (marwan@football.ai)
+            Fill Demo (user@football.ai)
           </button>
         </div>
       </div>

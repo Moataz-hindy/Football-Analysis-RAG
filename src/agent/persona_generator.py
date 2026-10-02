@@ -163,14 +163,20 @@ def generate_personas_for_topic(
     camp_b_name = data_a.get("camp_b_name", "Side B")
     personas_a = data_a.get("personas", [])
 
+    camp_a_names = [p.get("name") for p in personas_a if isinstance(p, dict) and p.get("name")]
+    camp_a_names_str = ", ".join(camp_a_names) if camp_a_names else "none"
+
     # Prompt 2: Generate Camp B
     prompt_camp_b = (
         f"You are organizing a 3v3 football debate on the topic or question: \"{topic}\".\n"
-        f"Camp A is: \"{camp_a_name}\". Camp B is: \"{camp_b_name}\".\n\n"
+        f"Camp A is: \"{camp_a_name}\". Camp B is: \"{camp_b_name}\".\n"
+        f"Personas already chosen for Camp A: {camp_a_names_str}.\n\n"
         f"TASK: Generate 3 authentic opposing personas representing Camp B (\"{camp_b_name}\"):\n"
         "   - coach: Opposing Manager / Tactical Counterpart\n"
         "   - fan: Opposing passionate matchday supporter voice\n"
         "   - pundit: Opposing former player / pundit\n\n"
+        f"CRITICAL UNIQUENESS MANDATE: Do NOT reuse or duplicate any names or individuals from Camp A ({camp_a_names_str}). "
+        "You MUST generate 3 completely distinct individuals for Camp B.\n\n"
         "AUTHENTIC IDENTITY & DYNAMIC STANCE MANDATE:\n"
         "Each persona must be an authentic football figure/analyst defined by WHO THEY ARE: their background, "
         "football philosophy, communication style, expertise, and priorities.\n"

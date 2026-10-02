@@ -9,7 +9,7 @@ import AgentCommunicationPitch from './AgentCommunicationPitch';
  *   sample passes (cursor stepped every 2.5s; pinned under reduced motion).
  * - Telemetry chip row under the pitch (xT, Block Depth, Passing Centrality).
  * - Live status topbar (FastAPI 8000, pgvector 1024-D, 6 specialist agents).
- * - Hero action suite: Initialize Workspace, Sign In, Quick Demo (Marwan - Scout).
+ * - Hero action suite: Initialize Workspace, Sign In, Quick Demo (Demo User).
  * - Deliberation simulator preview with consensus meter.
  * - Interactive Persona Profile Matrix.
  * - Multi-tenant security & architecture guarantee.
@@ -231,7 +231,7 @@ export default function LandingPage({
                 className="px-6 py-3.5 rounded-xl text-[14px] font-medium bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/40 text-[#38bdf8] transition-all flex items-center gap-2 backdrop-blur-md cursor-pointer active:scale-95"
               >
                 <i className="ph ph-lightning text-lg text-[#38bdf8]"></i>
-                <span>Quick Demo (Marwan - Scout)</span>
+                <span>Quick Demo (Demo User)</span>
               </button>
 
               <button
@@ -471,7 +471,7 @@ export default function LandingPage({
                 </div>
                 <div className="text-sm font-semibold text-white">
                   Seed Account Available:
-                  <div className="text-[#00f59b] font-mono text-[12px] mt-1">marwan@football.ai</div>
+                  <div className="text-[#00f59b] font-mono text-[12px] mt-1">user@football.ai</div>
                 </div>
                 <button
                   type="button"
